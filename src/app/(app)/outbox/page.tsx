@@ -48,7 +48,7 @@ export default async function OutboxPage() {
     <>
       <PageHeader
         title="Outbox"
-        description="Drafts wait here until you approve them. The hourly cron sends everything approved."
+        description="Drafts wait here until you approve them. The cron sends everything approved twice a day — or press Send now."
       >
         <form action={generateDrafts}>
           <SubmitButton size="sm" variant="outline" pendingLabel="Drafting…">

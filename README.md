@@ -21,8 +21,9 @@ Apify search  →  leads  →  Claude qualify + research  →  campaign  →  ou
 | **Analytics** | Funnel, 30-day activity, per-campaign open and reply rates. |
 | **Settings** | Your ICP text, sender name, admin users, and which env vars are set. |
 
-An hourly cron (`/api/cron`) imports finished searches, checks IMAP for replies, drafts what is
-due and sends what is approved. Every button also has a manual equivalent in the UI.
+A cron (`/api/cron`) imports finished searches, checks IMAP for replies, drafts what is due and
+sends what is approved — replies first, so a lead who answered never gets the next step. Every
+step also has a manual button in the UI. See [Cron and your Vercel plan](#cron-and-your-vercel-plan).
 
 ## Setup
 
@@ -78,8 +79,30 @@ Then fill in **Settings → Ideal customer profile**. Lead qualification does no
 vercel deploy --prod
 ```
 
-The cron in `vercel.json` runs hourly. On the Hobby plan Vercel only runs crons once a day —
-either upgrade to Pro or use the "Run pipeline now" button on the dashboard.
+### Cron and your Vercel plan
+
+`vercel.json` declares **two daily crons** (07:00 and 13:00 UTC), both hitting `/api/cron`.
+That is deliberate: the Hobby plan rejects any schedule more frequent than once per day
+(an hourly `0 * * * *` fails the deploy), but allows two cron jobs — so two daily runs is the
+most responsive configuration Hobby permits.
+
+Sequence delays are measured in days, so a twice-daily tick is the right granularity for
+sending. What it does affect is latency on importing finished Apify searches and on spotting
+replies — worst case ~12 hours. Both have manual buttons in the UI ("Check for results" on
+Searches, "Run pipeline now" on the dashboard) when you don't want to wait.
+
+On Pro, replace both entries with a single hourly one:
+
+```json
+"crons": [{ "path": "/api/cron", "schedule": "0 * * * *" }]
+```
+
+Verify what actually registered after deploying:
+
+```bash
+vercel crons ls
+vercel crons run /api/cron   # trigger it by hand
+```
 
 ## Analytics: what the numbers mean
 
