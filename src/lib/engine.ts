@@ -1,6 +1,6 @@
 import 'server-only'
 import { getDatasetItems, getRun } from './apify'
-import { draftEmail, qualifyLead, researchCompany } from './ai'
+import { describeApiError, draftEmail, qualifyLead, researchCompany } from './ai'
 import { db, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
 import { checkReplies } from './replies'
@@ -206,6 +206,7 @@ async function mapLimit<T>(
 ) {
   const queue = [...items]
   let failed = 0
+  let reason = ''
   await Promise.all(
     Array.from({ length: Math.min(limit, queue.length) }, async () => {
       for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
@@ -214,12 +215,14 @@ async function mapLimit<T>(
           await work(item)
         } catch (error) {
           failed++
+          // Keep the first reason: a count alone sends the user off to read logs.
+          if (!reason) reason = describeApiError(error)
           console.error('pipeline item failed', error)
         }
       }
     }),
   )
-  return { failed }
+  return { failed, reason }
 }
 
 export type CampaignPass = {
@@ -227,6 +230,7 @@ export type CampaignPass = {
   scored: number
   drafted: number
   failed: number
+  reason: string
   unscored: number
   due: number
 }
@@ -240,7 +244,7 @@ export type CampaignPass = {
  */
 export async function runCampaign(campaignId: number): Promise<CampaignPass> {
   const deadline = Date.now() + PASS_BUDGET_MS
-  const empty = { enrolled: 0, scored: 0, drafted: 0, failed: 0, unscored: 0, due: 0 }
+  const empty = { enrolled: 0, scored: 0, drafted: 0, failed: 0, reason: '', unscored: 0, due: 0 }
   const [campaign] = (await db()`select * from campaigns where id = ${campaignId}`) as Campaign[]
   if (!campaign) return empty
 
@@ -261,6 +265,7 @@ export async function runCampaign(campaignId: number): Promise<CampaignPass> {
   // 2. Score the unscored against this campaign's ICP.
   let scored = 0
   let failed = 0
+  let reason = ''
   if (campaign.icp.trim()) {
     const unscored = (await db()`
       select e.id, e.lead_id from enrollments e
@@ -279,6 +284,7 @@ export async function runCampaign(campaignId: number): Promise<CampaignPass> {
       scored++
     })
     failed += pass.failed
+    reason ||= pass.reason
   }
 
   // 3. Draft what is due, best-scoring first. Drafting researches as it goes.
@@ -293,6 +299,7 @@ export async function runCampaign(campaignId: number): Promise<CampaignPass> {
     if (await draftForEnrollment(row.id)) drafted++
   })
   failed += draftPass.failed
+  reason ||= draftPass.reason
 
   // What is still outstanding, so the caller can say whether another pass is needed.
   const [left] = (await db()`
@@ -306,7 +313,7 @@ export async function runCampaign(campaignId: number): Promise<CampaignPass> {
                            where m.enrollment_id = e.id and m.step = e.step))::int as due
   `) as { unscored: number; due: number }[]
 
-  return { enrolled, scored, drafted, failed, unscored: left.unscored, due: left.due }
+  return { enrolled, scored, drafted, failed, reason, unscored: left.unscored, due: left.due }
 }
 
 /** One pass: draft what is due, send what is approved. */

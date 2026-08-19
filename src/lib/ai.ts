@@ -27,7 +27,9 @@ let client: Anthropic | null = null
 function anthropic() {
   if (!client) {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set')
-    client = new Anthropic()
+    // 529 overloaded is common and transient, and these calls are slow enough that
+    // losing one to a blip is expensive. The SDK backs off exponentially between tries.
+    client = new Anthropic({ maxRetries: 5 })
   }
   return client
 }
@@ -51,6 +53,32 @@ function finalText(content: Anthropic.ContentBlock[]) {
     if (block.type.includes('tool')) lastTool = index
   })
   return textOf(content.slice(lastTool + 1)) || textOf(content)
+}
+
+/**
+ * Turns an SDK error into something worth showing a user. Most specific first —
+ * RateLimitError and InternalServerError both extend APIError, so order matters.
+ */
+export function describeApiError(error: unknown): string {
+  if (error instanceof Anthropic.APIConnectionError) {
+    return 'Could not reach Claude. Check the connection and try again.'
+  }
+  if (error instanceof Anthropic.RateLimitError) {
+    return 'Claude is rate-limiting us. Wait a minute and try again.'
+  }
+  if (error instanceof Anthropic.AuthenticationError) {
+    return 'ANTHROPIC_API_KEY is missing or invalid.'
+  }
+  if (error instanceof Anthropic.APIError) {
+    if (error.status === 529) {
+      return 'Claude is overloaded right now. Nothing is wrong with your input — try again in a minute.'
+    }
+    if (typeof error.status === 'number' && error.status >= 500) {
+      return `Claude had a server error (${error.status}). Try again shortly.`
+    }
+    return `Claude rejected the request (${error.status}): ${error.message}`
+  }
+  return error instanceof Error ? error.message : String(error)
 }
 
 function guardRefusal(message: { stop_reason: string | null }) {

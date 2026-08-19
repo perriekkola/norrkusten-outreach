@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { refresh } from 'next/cache'
-import { draftCampaign } from './ai'
+import { describeApiError, draftCampaign } from './ai'
 import { startRun, abortRun, type LeadSearchInput } from './apify'
 import {
   checkPassword,
@@ -140,6 +140,7 @@ export async function createSearch(_prev: State, formData: FormData): Promise<St
       insert into searches (label, input, run_id, status)
       values (${label}, ${jsonb(input)}::jsonb, ${run.id}, 'running')`
   } catch (error) {
+    console.error('search start failed', error)
     return { error: String(error) }
   }
   refresh()
@@ -194,7 +195,8 @@ export async function generateCampaign(_prev: DraftState, formData: FormData): P
     })
     return { ok: 'Drafted. Read every field before creating — it can get things wrong.', draft }
   } catch (error) {
-    return { error: String(error) }
+    console.error('campaign draft failed', error)
+    return { error: describeApiError(error) }
   }
 }
 
@@ -221,7 +223,7 @@ export async function runCampaignNow(_prev: State, formData: FormData): Promise<
     ok: [
       did.length ? did.join(', ') : 'Nothing new to do',
       left.length ? `${left.join(' and ')} — run again to continue` : null,
-      pass.failed ? `${pass.failed} failed, see the logs` : null,
+      pass.failed ? `${pass.failed} failed: ${pass.reason}` : null,
     ]
       .filter(Boolean)
       .join('. '),
