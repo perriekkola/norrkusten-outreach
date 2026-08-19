@@ -79,6 +79,8 @@ export type Mailbox = {
   smtp_user: string
   /** Encrypted at rest; never send this to the client. */
   smtp_pass: string
+  /** Appended to every email from this mailbox. The model is told not to sign off. */
+  signature: string
   imap_host: string | null
   imap_port: number
   is_default: boolean

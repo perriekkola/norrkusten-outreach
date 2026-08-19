@@ -112,6 +112,7 @@ export async function saveMailbox(_prev: State, formData: FormData): Promise<Sta
     smtpUser,
     imapHost: String(formData.get('imap_host') ?? '').trim() || null,
     imapPort: Number(formData.get('imap_port')) || 993,
+    signature: String(formData.get('signature') ?? ''),
     isDefault: formData.get('is_default') === 'on',
   }
 
@@ -120,7 +121,8 @@ export async function saveMailbox(_prev: State, formData: FormData): Promise<Sta
       update mailboxes
          set name = ${values.name}, from_email = ${values.fromEmail}, reply_to = ${values.replyTo},
              smtp_host = ${values.smtpHost}, smtp_port = ${values.smtpPort},
-             smtp_user = ${values.smtpUser}, imap_host = ${values.imapHost},
+             smtp_user = ${values.smtpUser}, signature = ${values.signature},
+             imap_host = ${values.imapHost},
              imap_port = ${values.imapPort}, is_default = ${values.isDefault}
        where id = ${id}`
     // Only overwrite the password when a new one was typed — the field is never prefilled.
@@ -129,11 +131,11 @@ export async function saveMailbox(_prev: State, formData: FormData): Promise<Sta
   } else {
     await db()`
       insert into mailboxes
-        (name, from_email, reply_to, smtp_host, smtp_port, smtp_user, smtp_pass,
+        (name, from_email, reply_to, smtp_host, smtp_port, smtp_user, smtp_pass, signature,
          imap_host, imap_port, is_default)
       values (${values.name}, ${values.fromEmail}, ${values.replyTo}, ${values.smtpHost},
-              ${values.smtpPort}, ${values.smtpUser}, ${encrypt(password)}, ${values.imapHost},
-              ${values.imapPort}, ${values.isDefault})`
+              ${values.smtpPort}, ${values.smtpUser}, ${encrypt(password)}, ${values.signature},
+              ${values.imapHost}, ${values.imapPort}, ${values.isDefault})`
   }
 
   // Exactly one default, always.

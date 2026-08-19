@@ -1,7 +1,7 @@
 import 'server-only'
 import nodemailer from 'nodemailer'
 import { db, type Mailbox } from './db'
-import { textToHtml } from './format'
+import { textToHtml, withSignature } from './format'
 import { decrypt } from './secrets'
 import { appUrl, clickToken, trackToken } from './tracking'
 
@@ -58,6 +58,7 @@ export async function resolveMailbox(mailboxId?: number | null): Promise<Mailbox
     smtp_port: Number(process.env.SMTP_PORT ?? 465),
     smtp_user: user,
     smtp_pass: '',
+    signature: '',
     imap_host: process.env.IMAP_HOST || null,
     imap_port: Number(process.env.IMAP_PORT ?? 993),
     is_default: true,
@@ -110,14 +111,15 @@ export async function sendEmail(args: {
   mailboxId?: number | null
 }): Promise<{ id: string; mailbox: string }> {
   const mailbox = await resolveMailbox(args.mailboxId)
+  const body = withSignature(args.body, mailbox.signature)
 
   const info = await open(mailbox).sendMail({
     from: mailbox.from_email,
     to: args.to,
     replyTo: mailbox.reply_to || undefined,
     subject: args.subject,
-    text: args.body,
-    html: textToHtml(args.body, pixelUrl(args.messageId), linkRewriter(args.messageId)),
+    text: body,
+    html: textToHtml(body, pixelUrl(args.messageId), linkRewriter(args.messageId)),
   })
 
   if (info.rejected?.length) throw new Error(`Rejected by server: ${info.rejected.join(', ')}`)

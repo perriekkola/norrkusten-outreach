@@ -59,7 +59,7 @@ function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: strin
   )
 }
 
-function DraftBody({ message }: { message: OutboxRow }) {
+function DraftBody({ message, signature }: { message: OutboxRow; signature: string }) {
   const [editing, setEditing] = useState(false)
   const [state, save, saving] = useActionState(updateDraft, {})
 
@@ -67,6 +67,11 @@ function DraftBody({ message }: { message: OutboxRow }) {
     return (
       <div className="space-y-3">
         <p className="text-sm whitespace-pre-wrap">{message.body}</p>
+        {signature ? (
+          <p className="text-muted-foreground border-l-2 pl-3 text-sm whitespace-pre-wrap">
+            {signature}
+          </p>
+        ) : null}
         <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
           Edit
         </Button>
@@ -96,9 +101,12 @@ function DraftBody({ message }: { message: OutboxRow }) {
 export function OutboxTable({
   messages,
   testEmail,
+  signatureFor,
 }: {
   messages: OutboxRow[]
   testEmail: string
+  /** Shown after the body so the preview matches what is actually delivered. */
+  signatureFor: Record<number, string>
 }) {
   const [selected, setSelected] = useState<number[]>([])
   const [expanded, setExpanded] = useState<number | null>(null)
@@ -270,7 +278,10 @@ export function OutboxTable({
                             </Link>
                             <div className="mt-1 font-medium">{message.subject}</div>
                           </div>
-                          <DraftBody message={message} />
+                          <DraftBody
+                            message={message}
+                            signature={signatureFor[message.campaign_id] ?? ''}
+                          />
                           <TestSend message={message} defaultTo={testEmail} />
                         </div>
                       </TableCell>

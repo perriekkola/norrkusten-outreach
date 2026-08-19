@@ -1,6 +1,7 @@
 import Link from 'next/link'
+import { ConfirmButton } from '@/components/confirm-button'
+import { Hint } from '@/components/hint'
 import { PageHeader } from '@/components/page-header'
-import { SubmitButton } from '@/components/submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { runTick } from '@/lib/actions'
@@ -21,9 +22,11 @@ async function stats(): Promise<Stats> {
   const [row] = (await db()`
     select
       (select count(*) from leads)::int                                            as leads,
-      (select count(distinct lead_id) from enrollments where score >= 50)::int      as qualified,
-      (select count(*) from leads where status = 'contacted')::int                 as contacted,
-      (select count(*) from leads where status = 'replied')::int                   as replied,
+      (select count(distinct e.lead_id) from enrollments e
+         join campaigns c on c.id = e.campaign_id
+        where e.score >= c.min_score)::int                                         as qualified,
+      (select count(distinct lead_id) from messages where status = 'sent')::int    as contacted,
+      (select count(distinct lead_id) from messages where replied_at is not null)::int as replied,
       (select count(*) from messages where status in ('draft','approved'))::int    as drafts,
       (select count(*) from messages where status = 'sent'
          and sent_at > now() - interval '7 days')::int                             as sent7,
@@ -35,11 +38,11 @@ async function stats(): Promise<Stats> {
 
 const TILES = [
   { key: 'leads', label: 'Leads', href: '/leads' },
-  { key: 'qualified', label: 'Scored 50+', href: '/campaigns' },
-  { key: 'contacted', label: 'Contacted', href: '/leads?status=contacted' },
-  { key: 'replied', label: 'Replied', href: '/leads?status=replied' },
+  { key: 'qualified', label: 'Above floor', href: '/campaigns' },
+  { key: 'contacted', label: 'Contacted', href: '/analytics' },
+  { key: 'replied', label: 'Replied', href: '/analytics' },
   { key: 'drafts', label: 'Waiting in outbox', href: '/outbox' },
-  { key: 'sent7', label: 'Sent (7 days)', href: '/outbox?tab=sent' },
+  { key: 'sent7', label: 'Sent (7 days)', href: '/analytics' },
   { key: 'running', label: 'Searches running', href: '/searches' },
   { key: 'campaigns', label: 'Active campaigns', href: '/campaigns' },
 ] as const
@@ -56,11 +59,24 @@ export default async function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" description="Pipeline at a glance.">
-        <form action={runTick}>
-          <SubmitButton variant="outline" size="sm" pendingLabel="Running…">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <ConfirmButton
+            action={runTick}
+            payload={{}}
+            variant="outline"
+            title="Run the whole pipeline now?"
+            description="Imports finished searches, checks for replies, then enrols, scores and drafts for every active campaign — and sends everything already approved. Approved emails go to real leads immediately."
+            confirmLabel="Run it"
+            pendingLabel="Running…"
+          >
             Run pipeline now
-          </SubmitButton>
-        </form>
+          </ConfirmButton>
+          <Hint>
+            Everything the twice-daily cron does, right now: import searches, check replies, run
+            each active campaign, and send approved mail. This is the only button on this page
+            that can deliver an email.
+          </Hint>
+        </div>
       </PageHeader>
 
       {error ? (
@@ -99,21 +115,25 @@ export default async function DashboardPage() {
         {[
           {
             title: '1. Find',
-            body: 'Run an Apify search with your targeting filters. Results import automatically.',
+            body: 'Run an Apify search with your targeting filters. Finished runs import on their own.',
             href: '/searches',
             cta: 'New search',
           },
           {
-            title: '2. Qualify',
-            body: 'Enroll a search into a campaign, then score those leads against that campaign\u2019s own profile.',
-            href: '/campaigns',
-            cta: 'Open campaigns',
-          },
-          {
-            title: '3. Reach out',
-            body: 'Enroll leads in a campaign. Drafts wait in the outbox until you approve them.',
+            title: '2. Target',
+            body:
+              'Give a campaign its own profile and tick the searches it should feed on. It ' +
+              'enrols and scores those leads itself, and ignores anything under its floor.',
             href: '/campaigns',
             cta: 'Campaigns',
+          },
+          {
+            title: '3. Approve',
+            body:
+              'Emails are written for you, best score first, and wait in the outbox. Nothing ' +
+              'sends until you approve it — unless the campaign has auto-send on.',
+            href: '/outbox',
+            cta: 'Outbox',
           },
         ].map((step) => (
           <Card key={step.title}>

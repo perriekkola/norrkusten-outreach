@@ -147,6 +147,7 @@ create table if not exists mailboxes (
   smtp_port   int  not null default 465,
   smtp_user   text not null,
   smtp_pass   text not null,
+  signature   text not null default '',
   imap_host   text,
   imap_port   int  not null default 993,
   is_default  boolean not null default false,
@@ -154,3 +155,4 @@ create table if not exists mailboxes (
 );
 
 alter table campaigns add column if not exists mailbox_id int references mailboxes(id) on delete set null;
+alter table mailboxes add column if not exists signature text not null default '';

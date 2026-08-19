@@ -24,6 +24,11 @@ assert.equal((html.match(/<p /g) ?? []).length, 2, 'blank line splits paragraphs
 assert.ok(!textToHtml('x').includes('<img'), 'no pixel without a URL')
 assert.ok(textToHtml('x', 'https://e.test/t/1-a').includes('<img'), 'pixel when URL given')
 
+const { withSignature } = await import('../src/lib/format.ts')
+assert.equal(withSignature('Hej.', 'Rickard'), 'Hej.\n\nRickard', 'signature follows a blank line')
+assert.equal(withSignature('Hej.\n\n', 'Rickard'), 'Hej.\n\nRickard', 'trailing space is not doubled')
+assert.equal(withSignature('Hej.', '   '), 'Hej.', 'a blank signature adds nothing')
+
 const { formatDetail } = await import('../src/lib/stream.ts')
 assert.equal(
   formatDetail('https://norrkusten.se/nya-maskinforordningen/'),

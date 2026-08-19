@@ -25,12 +25,13 @@ export type OutboxRow = {
   email: string
   company_name: string | null
   campaign_name: string
+  campaign_id: number
 }
 
 const SELECT = `
   select m.id, m.subject, m.body, m.status, m.step, m.sent_at, m.opened_at, m.replied_at,
          m.open_count, m.clicked_at, m.click_count, m.error, l.id as lead_id, l.full_name as lead_name, l.email,
-         l.company_name, c.name as campaign_name
+         l.company_name, c.name as campaign_name, c.id as campaign_id
     from messages m
     join leads l on l.id = m.lead_id
     join enrollments e on e.id = m.enrollment_id
@@ -42,6 +43,15 @@ export default async function OutboxPage() {
   )) as OutboxRow[]
 
   const testEmail = await getSetting('test_email')
+
+  // What the outbox shows has to be what leaves, so the signature is resolved here.
+  const signatures = (await db()`
+    select c.id as campaign_id, coalesce(m.signature, d.signature, '') as signature
+      from campaigns c
+      left join mailboxes m on m.id = c.mailbox_id
+      left join mailboxes d on d.is_default
+     `) as { campaign_id: number; signature: string }[]
+  const signatureFor = Object.fromEntries(signatures.map((r) => [r.campaign_id, r.signature]))
 
   const sent = (await db().query(
     `${SELECT} where m.status in ('sent','failed') order by m.sent_at desc nulls last limit 100`,
@@ -74,7 +84,7 @@ export default async function OutboxPage() {
               </CardContent>
             </Card>
           ) : (
-            <OutboxTable messages={pending} testEmail={testEmail} />
+            <OutboxTable messages={pending} testEmail={testEmail} signatureFor={signatureFor} />
           )}
         </TabsContent>
 

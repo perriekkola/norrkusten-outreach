@@ -179,7 +179,12 @@ const Draft = z.object({
   subject: z
     .string()
     .describe('Sentence case, like a human typed it. Short and specific. No emoji, no fake "Re:".'),
-  body: z.string().describe('Plain text email body including greeting and sign-off. No markdown.'),
+  body: z
+    .string()
+    .describe(
+      'Plain text body, opening greeting included. No sign-off and no name — a signature is ' +
+        'appended afterwards. No markdown.',
+    ),
 })
 
 export type Draft = z.infer<typeof Draft>
@@ -226,7 +231,8 @@ export async function draftEmail(args: {
       '  no "jag såg att...", no company boilerplate, no phone-number sign-off.',
       '- Exactly one ask, and it is whatever the goal for this email says. Do not substitute a',
       '  meeting request for it.',
-      `- Sign off as ${senderName} and nothing else.`,
+      '- Do not write a sign-off, a closing greeting or your name. A signature is appended',
+      '  automatically after your text. End on the last sentence of the message itself.',
       guidelines.trim() ? `\nCampaign-specific rules, these override the defaults:\n${guidelines.trim()}` : '',
     ]
       .filter(Boolean)

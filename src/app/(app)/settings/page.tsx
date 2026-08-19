@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   const senderName = await getSetting('sender_name')
   // smtp_pass is deliberately not selected — the encrypted value never goes to the client.
   const mailboxes = (await db()`
-    select id, name, from_email, reply_to, smtp_host, smtp_port, smtp_user,
+    select id, name, from_email, reply_to, smtp_host, smtp_port, smtp_user, signature,
            imap_host, imap_port, is_default
       from mailboxes order by is_default desc, id`) as MailboxRow[]
 

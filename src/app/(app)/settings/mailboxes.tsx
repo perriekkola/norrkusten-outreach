@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { deleteMailbox, saveMailbox, testMailbox } from '@/lib/actions'
 
 /** Never includes smtp_pass — the encrypted value has no business reaching the browser. */
@@ -20,6 +21,7 @@ export type MailboxRow = {
   smtp_host: string
   smtp_port: number
   smtp_user: string
+  signature: string
   imap_host: string | null
   imap_port: number
   is_default: boolean
@@ -79,6 +81,23 @@ function MailboxForm({ mailbox, onDone }: { mailbox?: MailboxRow; onDone: () => 
         <Field label="Reply-To (optional)">
           <Input name="reply_to" defaultValue={mailbox?.reply_to ?? ''} />
         </Field>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="flex items-center gap-1.5 text-xs">
+          Signature
+          <Hint>
+            Appended to every email sent from this mailbox. Claude is told not to write a
+            sign-off, so this is the only place a name and closing appear — keep it short, since
+            a long block reads as marketing in a cold email.
+          </Hint>
+        </Label>
+        <Textarea
+          name="signature"
+          rows={4}
+          defaultValue={mailbox?.signature}
+          placeholder={'Vänliga hälsningar\nRickard Riekkola\nNorrkusten Utbildning\n0920-19100'}
+        />
       </div>
 
       <label className="flex items-center gap-2 text-sm">

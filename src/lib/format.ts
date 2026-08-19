@@ -1,3 +1,9 @@
+/** The signature is configuration, not something to regenerate per email. */
+export function withSignature(body: string, signature: string) {
+  const trimmed = signature.trim()
+  return trimmed ? `${body.trimEnd()}\n\n${trimmed}` : body
+}
+
 // Bare URLs in the plain-text body. Trailing punctuation is excluded so a sentence-final
 // full stop or a closing bracket does not end up inside the href.
 const URL_PATTERN = /https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g
