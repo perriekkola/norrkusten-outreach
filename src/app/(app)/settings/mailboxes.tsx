@@ -105,7 +105,7 @@ function MailboxForm({ mailbox, onDone }: { mailbox?: MailboxRow; onDone: () => 
 function TestButton({ id }: { id: number }) {
   const [state, action, pending] = useActionState(testMailbox, {})
   return (
-    <form action={action} className="flex items-center gap-2">
+    <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="id" value={id} />
       <Button type="submit" size="sm" variant="outline" disabled={pending}>
         {pending ? <Spinner /> : null}
@@ -134,7 +134,7 @@ export function Mailboxes({ mailboxes }: { mailboxes: MailboxRow[] }) {
         ) : (
           <div key={mailbox.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 text-sm font-medium">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                 {mailbox.name}
                 {mailbox.is_default ? <Badge variant="secondary">default</Badge> : null}
                 {!mailbox.imap_host ? (

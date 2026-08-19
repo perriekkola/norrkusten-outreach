@@ -47,7 +47,7 @@ export default async function SearchesPage() {
         title="Searches"
         description="Source leads from Apify. Runs finish in the background — results import automatically."
       >
-        <form action={refreshSearches} className="flex items-center gap-1.5">
+        <form action={refreshSearches} className="flex shrink-0 items-center gap-1.5">
           <SubmitButton variant="outline" size="sm" pendingLabel="Checking…">
             Check for results
           </SubmitButton>

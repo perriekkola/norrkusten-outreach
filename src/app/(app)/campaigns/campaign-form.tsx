@@ -313,8 +313,8 @@ export function CampaignForm({
         </div>
 
         {steps.map((step, index) => (
-          <div key={index} className="flex gap-3 rounded-lg border p-3">
-            <div className="w-28 shrink-0 space-y-1">
+          <div key={index} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row">
+            <div className="space-y-1 sm:w-28 sm:shrink-0">
               <Label className="flex items-center gap-1 text-xs">
                 {index === 0 ? 'Send' : 'Wait (days)'}
                 {index === 1 ? (

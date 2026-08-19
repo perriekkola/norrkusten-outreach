@@ -51,25 +51,29 @@ export function RunButton({ campaignId, disabled }: { campaignId: number; disabl
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <Button size="sm" onClick={run} disabled={running || disabled}>
-        {running ? <Spinner /> : null}
-        {running ? 'Running…' : 'Run now'}
-      </Button>
-      <Hint label="What Run now does">
-        Three things, for this campaign only: enrol every lead from the ticked searches, score the
-        unscored against this campaign&apos;s profile, then draft the emails that are due — best
-        score first, researching each company as it goes. It never sends. Drafts land in the
-        outbox. Safe to press repeatedly; each pass skips finished work and stops before the
-        server timeout, so large batches need a few clicks.
-      </Hint>
+      {/* Button and hint travel together — wrapping between them orphans the icon. */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Button size="sm" onClick={run} disabled={running || disabled}>
+          {running ? <Spinner /> : null}
+          {running ? 'Running…' : 'Run now'}
+        </Button>
+        <Hint label="What Run now does">
+          Three things, for this campaign only: enrol every lead from the ticked searches, score
+          the unscored against this campaign&apos;s profile, then draft the emails that are due —
+          best score first, researching each company as it goes. It never sends. Drafts land in
+          the outbox. Safe to press repeatedly; each pass skips finished work and stops before the
+          server timeout, so large batches need a few clicks.
+        </Hint>
+      </div>
+
       {running ? (
-        <span className="text-muted-foreground min-w-0 max-w-[min(24rem,60vw)] truncate text-xs">
+        <span className="text-muted-foreground min-w-0 basis-full truncate text-xs sm:basis-auto sm:max-w-[24rem]">
           {progress.phase}
           {progress.detail ? ` · ${formatDetail(progress.detail)}` : ''}
         </span>
       ) : null}
       {result ? (
-        <span className="text-muted-foreground min-w-0 max-w-[min(28rem,60vw)] text-xs">
+        <span className="text-muted-foreground min-w-0 basis-full text-xs sm:basis-auto sm:max-w-[28rem]">
           {result}
         </span>
       ) : null}

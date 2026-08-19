@@ -58,7 +58,7 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
         title={lead.full_name || lead.email}
         description={[lead.job_title, lead.company_name].filter(Boolean).join(' · ')}
       >
-        <form action={setLeadStatus} className="flex items-center gap-1.5">
+        <form action={setLeadStatus} className="flex shrink-0 items-center gap-1.5">
           <input type="hidden" name="leadId" value={lead.id} />
           <input type="hidden" name="status" value="replied" />
           <SubmitButton size="sm" pendingLabel="…">

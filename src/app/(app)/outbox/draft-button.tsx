@@ -10,7 +10,7 @@ export function DraftButton() {
   const [state, action, pending] = useActionState(generateDrafts, {})
 
   return (
-    <form action={action} className="flex items-center gap-1.5">
+    <form action={action} className="flex flex-wrap items-center gap-1.5">
       <Button type="submit" size="sm" variant="outline" disabled={pending}>
         {pending ? <Spinner /> : null}
         {pending ? 'Drafting…' : 'Draft due emails'}

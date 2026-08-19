@@ -86,7 +86,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
         <RunButton campaignId={campaign.id} disabled={!campaign.icp.trim()} />
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <ConfirmButton
             action={dropWeak}
             payload={{ campaignId: campaign.id }}
@@ -106,7 +106,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
             Settings if you want to cut more.
           </Hint>
         </div>
-        <form action={setCampaignStatus}>
+        <form action={setCampaignStatus} className="shrink-0">
           <input type="hidden" name="id" value={campaign.id} />
           <input
             type="hidden"

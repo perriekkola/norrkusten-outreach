@@ -50,7 +50,7 @@ function DraftBody({ message }: { message: OutboxRow }) {
       <input type="hidden" name="id" value={message.id} />
       <Input name="subject" defaultValue={message.subject} />
       <Textarea name="body" defaultValue={message.body} rows={12} />
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" disabled={saving}>
           {saving ? <Spinner /> : null}
           {saving ? 'Saving…' : 'Save'}
@@ -107,7 +107,7 @@ export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
           {approving ? 'Approving…' : `Approve${draftsSelected.length ? ` ${draftsSelected.length}` : ''}`}
         </Button>
 
-        <form action={rewriteAction} className="flex items-center gap-1.5">
+        <form action={rewriteAction} className="flex shrink-0 items-center gap-1.5">
           {selected.map((id) => (
             <input key={id} type="hidden" name="messageId" value={id} />
           ))}
