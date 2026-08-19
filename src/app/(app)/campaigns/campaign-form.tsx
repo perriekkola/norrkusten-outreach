@@ -1,0 +1,129 @@
+'use client'
+
+import { useActionState, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { saveCampaign } from '@/lib/actions'
+import type { Campaign, CampaignStep } from '@/lib/db'
+
+const DEFAULT_STEPS: CampaignStep[] = [
+  { delay_days: 0, goal: 'Intro: why we are reaching out, one concrete hook, ask for a 15-min call.' },
+  { delay_days: 4, goal: 'Follow-up: add one new angle or proof point. Keep it to three sentences.' },
+  { delay_days: 7, goal: 'Break-up: short, no pressure, leave the door open.' },
+]
+
+export function CampaignForm({ campaign }: { campaign?: Campaign }) {
+  const [state, action, pending] = useActionState(saveCampaign, {})
+  const [steps, setSteps] = useState<CampaignStep[]>(campaign?.steps.length ? campaign.steps : DEFAULT_STEPS)
+
+  return (
+    <form action={action} className="max-w-2xl space-y-6">
+      {campaign ? <input type="hidden" name="id" value={campaign.id} /> : null}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="name">Name</Label>
+          <Input id="name" name="name" defaultValue={campaign?.name} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="from_name">Sender name</Label>
+          <Input
+            id="from_name"
+            name="from_name"
+            defaultValue={campaign?.from_name ?? ''}
+            placeholder="Per Riekkola"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="offer">What you are selling</Label>
+        <Textarea
+          id="offer"
+          name="offer"
+          rows={5}
+          defaultValue={campaign?.offer}
+          placeholder="Describe the courses, who they help and the outcome. Claude uses this verbatim when writing."
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="language">Language</Label>
+          <select
+            id="language"
+            name="language"
+            defaultValue={campaign?.language ?? 'sv'}
+            className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+          >
+            <option value="sv">Swedish</option>
+            <option value="en">English</option>
+            <option value="no">Norwegian</option>
+            <option value="da">Danish</option>
+            <option value="fi">Finnish</option>
+          </select>
+        </div>
+        <label className="flex items-end gap-2 pb-2 text-sm">
+          <Checkbox name="auto_send" defaultChecked={campaign?.auto_send} />
+          Send without approval
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>Sequence</Label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setSteps((s) => [...s, { delay_days: 5, goal: '' }])}
+          >
+            Add step
+          </Button>
+        </div>
+
+        {steps.map((step, index) => (
+          <div key={index} className="flex gap-3 rounded-lg border p-3">
+            <div className="w-28 shrink-0 space-y-1">
+              <Label className="text-xs">
+                {index === 0 ? 'Send' : 'Wait (days)'}
+              </Label>
+              <Input
+                name="step_delay"
+                type="number"
+                min={0}
+                defaultValue={index === 0 ? 0 : step.delay_days}
+                disabled={index === 0}
+                className="disabled:opacity-60"
+              />
+              {index === 0 ? <input type="hidden" name="step_delay" value={0} /> : null}
+            </div>
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs">Goal of this email</Label>
+              <Textarea name="step_goal" rows={2} defaultValue={step.goal} />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground self-start"
+              onClick={() => setSteps((s) => s.filter((_, i) => i !== index))}
+            >
+              ✕
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      {state.error ? <p className="text-destructive text-sm">{state.error}</p> : null}
+      {state.ok ? <p className="text-sm text-green-600">{state.ok}</p> : null}
+
+      <Button type="submit" disabled={pending}>
+        {pending ? 'Saving…' : campaign ? 'Save changes' : 'Create campaign'}
+      </Button>
+    </form>
+  )
+}

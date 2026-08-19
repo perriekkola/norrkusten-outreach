@@ -1,0 +1,163 @@
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { PageHeader } from '@/components/page-header'
+import { SubmitButton } from '@/components/submit-button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { deleteCampaign, generateDrafts, setCampaignStatus, unenroll } from '@/lib/actions'
+import { db, type Campaign } from '@/lib/db'
+import { CampaignForm } from '../campaign-form'
+
+type EnrollmentRow = {
+  id: number
+  step: number
+  status: string
+  next_send_at: string
+  lead_id: number
+  full_name: string | null
+  email: string
+  company_name: string | null
+  sent: number
+  opened: number
+}
+
+export default async function CampaignPage({ params }: PageProps<'/campaigns/[id]'>) {
+  const { id } = await params
+  const [campaign] = (await db()`select * from campaigns where id = ${Number(id)}`) as Campaign[]
+  if (!campaign) notFound()
+
+  const enrollments = (await db()`
+    select e.id, e.step, e.status, e.next_send_at, l.id as lead_id, l.full_name, l.email,
+           l.company_name,
+           (select count(*) from messages m
+             where m.enrollment_id = e.id and m.status = 'sent')::int as sent,
+           (select count(*) from messages m
+             where m.enrollment_id = e.id and m.opened_at is not null)::int as opened
+      from enrollments e join leads l on l.id = e.lead_id
+     where e.campaign_id = ${campaign.id}
+     order by e.next_send_at limit 500`) as EnrollmentRow[]
+
+  return (
+    <>
+      <PageHeader title={campaign.name} description={`${campaign.steps.length} steps`}>
+        <form action={generateDrafts}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <SubmitButton size="sm" variant="outline" pendingLabel="Drafting…">
+            Draft due emails
+          </SubmitButton>
+        </form>
+        <form action={setCampaignStatus}>
+          <input type="hidden" name="id" value={campaign.id} />
+          <input
+            type="hidden"
+            name="status"
+            value={campaign.status === 'active' ? 'paused' : 'active'}
+          />
+          <SubmitButton size="sm" variant="outline" pendingLabel="…">
+            {campaign.status === 'active' ? 'Pause' : 'Resume'}
+          </SubmitButton>
+        </form>
+      </PageHeader>
+
+      <Tabs defaultValue="leads">
+        <TabsList>
+          <TabsTrigger value="leads">Enrolled ({enrollments.length})</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="leads" className="mt-4">
+          <Card>
+            <CardContent className="px-0">
+              {enrollments.length === 0 ? (
+                <p className="text-muted-foreground px-6 py-8 text-center text-sm">
+                  Nobody enrolled yet — pick leads on the{' '}
+                  <Link href="/leads" className="text-primary underline">
+                    Leads
+                  </Link>{' '}
+                  page.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Lead</TableHead>
+                      <TableHead className="w-20">Step</TableHead>
+                      <TableHead className="w-24">Sent</TableHead>
+                      <TableHead className="w-24">Opened</TableHead>
+                      <TableHead className="w-28">Status</TableHead>
+                      <TableHead className="w-32">Next</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {enrollments.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <Link href={`/leads/${row.lead_id}`} className="font-medium hover:underline">
+                            {row.full_name || row.email}
+                          </Link>
+                          <div className="text-muted-foreground text-xs">
+                            {row.company_name ?? row.email}
+                          </div>
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {Math.min(row.step + 1, campaign.steps.length)}/{campaign.steps.length}
+                        </TableCell>
+                        <TableCell className="tabular-nums">{row.sent}</TableCell>
+                        <TableCell className="tabular-nums">{row.opened}</TableCell>
+                        <TableCell>
+                          <Badge variant={row.status === 'replied' ? 'default' : 'outline'}>
+                            {row.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {row.status === 'active'
+                            ? new Date(row.next_send_at).toLocaleDateString('sv-SE')
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <form action={unenroll}>
+                            <input type="hidden" name="enrollmentId" value={row.id} />
+                            <SubmitButton size="sm" variant="ghost" pendingLabel="…">
+                              Remove
+                            </SubmitButton>
+                          </form>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-4 space-y-8">
+          <CampaignForm campaign={campaign} />
+          <Card className="border-destructive/40">
+            <CardHeader>
+              <CardTitle className="text-destructive text-base">Danger zone</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form action={deleteCampaign}>
+                <input type="hidden" name="id" value={campaign.id} />
+                <SubmitButton variant="destructive" size="sm" pendingLabel="Deleting…">
+                  Delete campaign and its enrollments
+                </SubmitButton>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </>
+  )
+}
