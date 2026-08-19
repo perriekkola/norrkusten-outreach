@@ -1,3 +1,19 @@
+/**
+ * Progress lines sit next to a button, so the detail has to stay short whatever the
+ * server sends. Full URLs become host plus a hint of the path; anything else is clipped.
+ */
+export function formatDetail(detail: string | undefined, max = 44): string {
+  if (!detail) return ''
+  try {
+    const url = new URL(detail)
+    const path = url.pathname.replace(/\/$/, '')
+    const short = `${url.host}${path}`
+    return short.length > max ? `${url.host}/…` : short
+  } catch {
+    return detail.length > max ? `${detail.slice(0, max - 1)}…` : detail
+  }
+}
+
 /** Newline-delimited JSON progress events, shared by the server routes and the client. */
 export type Progress = { phase: string; detail?: string }
 export type StreamEvent<T> =

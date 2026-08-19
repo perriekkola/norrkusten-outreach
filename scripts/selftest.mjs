@@ -24,6 +24,24 @@ assert.equal((html.match(/<p /g) ?? []).length, 2, 'blank line splits paragraphs
 assert.ok(!textToHtml('x').includes('<img'), 'no pixel without a URL')
 assert.ok(textToHtml('x', 'https://e.test/t/1-a').includes('<img'), 'pixel when URL given')
 
+const { formatDetail } = await import('../src/lib/stream.ts')
+assert.equal(
+  formatDetail('https://norrkusten.se/nya-maskinforordningen/'),
+  'norrkusten.se/nya-maskinforordningen',
+  'a URL that fits keeps its path, minus the trailing slash',
+)
+assert.equal(
+  formatDetail(`https://norrkusten.se/${'kurser/'.repeat(9)}`),
+  'norrkusten.se/…',
+  'a URL that does not fit collapses to its host',
+)
+assert.ok(
+  formatDetail('https://norrkusten.se/' + 'x'.repeat(300)).length <= 44,
+  'no URL can exceed the cap',
+)
+assert.ok(formatDetail('x'.repeat(200)).length <= 44, 'plain text is clipped')
+assert.equal(formatDetail(undefined), '', 'no detail renders nothing')
+
 assert.equal(readTrackToken(trackToken(42)), 42, 'token round-trips')
 assert.equal(readTrackToken('42-deadbeefdeadbeef'), null, 'forged signature rejected')
 assert.equal(readTrackToken('43' + trackToken(42).slice(2)), null, 'id swap rejected')

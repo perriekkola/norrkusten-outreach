@@ -6,7 +6,7 @@ import { Hint } from '@/components/hint'
 import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import type { CampaignPass } from '@/lib/engine'
-import { readProgress, type Progress } from '@/lib/stream'
+import { formatDetail, readProgress, type Progress } from '@/lib/stream'
 
 export function RunButton({ campaignId, disabled }: { campaignId: number; disabled: boolean }) {
   const router = useRouter()
@@ -50,7 +50,7 @@ export function RunButton({ campaignId, disabled }: { campaignId: number; disabl
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       <Button size="sm" onClick={run} disabled={running || disabled}>
         {running ? <Spinner /> : null}
         {running ? 'Running…' : 'Run now'}
@@ -63,12 +63,16 @@ export function RunButton({ campaignId, disabled }: { campaignId: number; disabl
         server timeout, so large batches need a few clicks.
       </Hint>
       {running ? (
-        <span className="text-muted-foreground max-w-md truncate text-xs">
+        <span className="text-muted-foreground min-w-0 max-w-[min(24rem,60vw)] truncate text-xs">
           {progress.phase}
-          {progress.detail ? ` · ${progress.detail}` : ''}
+          {progress.detail ? ` · ${formatDetail(progress.detail)}` : ''}
         </span>
       ) : null}
-      {result ? <span className="text-muted-foreground text-xs">{result}</span> : null}
+      {result ? (
+        <span className="text-muted-foreground min-w-0 max-w-[min(28rem,60vw)] text-xs">
+          {result}
+        </span>
+      ) : null}
     </div>
   )
 }

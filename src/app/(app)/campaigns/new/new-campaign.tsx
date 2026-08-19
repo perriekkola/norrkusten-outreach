@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import type { CampaignDraft } from '@/lib/ai'
-import { readProgress, type Progress } from '@/lib/stream'
+import { formatDetail, readProgress, type Progress } from '@/lib/stream'
 import { CampaignForm } from '../campaign-form'
 
 export function NewCampaign({
@@ -66,9 +66,9 @@ export function NewCampaign({
               {generating ? 'Working…' : 'Draft campaign'}
             </Button>
             {generating ? (
-              <span className="text-muted-foreground max-w-lg truncate text-xs">
+              <span className="text-muted-foreground min-w-0 max-w-[min(24rem,60vw)] truncate text-xs">
                 {progress.phase}
-                {progress.detail ? ` · ${progress.detail}` : ''}
+                {progress.detail ? ` · ${formatDetail(progress.detail)}` : ''}
               </span>
             ) : null}
             {error ? <span className="text-destructive text-sm">{error}</span> : null}
