@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { generateDrafts } from '@/lib/actions'
 import { Hint } from '@/components/hint'
 import { db } from '@/lib/db'
-import { DraftCard } from './draft-card'
+import { OutboxTable } from './outbox-table'
 
 export type OutboxRow = {
   id: number
@@ -71,7 +71,7 @@ export default async function OutboxPage() {
           <TabsTrigger value="sent">Sent ({sent.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pending" className="mt-4 space-y-4">
+        <TabsContent value="pending" className="mt-4">
           {pending.length === 0 ? (
             <Card>
               <CardContent className="text-muted-foreground py-10 text-center text-sm">
@@ -83,7 +83,7 @@ export default async function OutboxPage() {
               </CardContent>
             </Card>
           ) : (
-            pending.map((message) => <DraftCard key={message.id} message={message} />)
+            <OutboxTable messages={pending} />
           )}
         </TabsContent>
 
