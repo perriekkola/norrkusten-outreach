@@ -40,6 +40,9 @@ export function AnalyticsFilters({
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState<DateRange | undefined>(
+    from && to ? { from: new Date(from), to: new Date(to) } : undefined,
+  )
 
   function apply(patch: Record<string, string | null>) {
     const params = new URLSearchParams()
@@ -95,7 +98,15 @@ export function AnalyticsFilters({
         </SelectContent>
       </Select>
 
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          // Reset the working range to whatever is applied whenever it reopens, so an
+          // abandoned half-selection doesn't linger.
+          if (next) setDraft(from && to ? { from: new Date(from), to: new Date(to) } : undefined)
+          setOpen(next)
+        }}
+      >
         <PopoverTrigger asChild>
           <Button variant="outline" className="font-normal">
             <CalendarIcon className="mr-2 size-4 opacity-60" />
@@ -103,25 +114,50 @@ export function AnalyticsFilters({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
+          {/* Uncontrolled while open: the range is only pushed to the URL on Apply, so
+              picking a start date doesn't reload the page with half a range. */}
           <Calendar
             mode="range"
             numberOfMonths={2}
-            defaultMonth={from ? new Date(from) : undefined}
-            selected={from && to ? { from: new Date(from), to: new Date(to) } : undefined}
-            onSelect={(range: DateRange | undefined) => {
-              if (!range?.from || !range.to) return
-              setOpen(false)
-              apply({ from: iso(range.from), to: iso(range.to) })
-            }}
+            defaultMonth={draft?.from ?? (from ? new Date(from) : undefined)}
+            selected={draft}
+            onSelect={setDraft}
           />
+          <div className="flex items-center justify-between gap-2 border-t p-3">
+            <span className="text-muted-foreground text-xs">
+              {draft?.from && draft.to
+                ? `${fmt(iso(draft.from))} – ${fmt(iso(draft.to))}`
+                : draft?.from
+                  ? 'Now pick an end date'
+                  : 'Pick a start date'}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDraft(undefined)
+                  setOpen(false)
+                  apply({ from: null, to: null })
+                }}
+              >
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                disabled={!draft?.from || !draft?.to}
+                onClick={() => {
+                  if (!draft?.from || !draft.to) return
+                  setOpen(false)
+                  apply({ from: iso(draft.from), to: iso(draft.to) })
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
         </PopoverContent>
       </Popover>
-
-      {from || to ? (
-        <Button variant="ghost" size="sm" onClick={() => apply({ from: null, to: null })}>
-          Clear
-        </Button>
-      ) : null}
     </div>
   )
 }
