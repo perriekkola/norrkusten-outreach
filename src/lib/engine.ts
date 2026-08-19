@@ -362,7 +362,14 @@ export async function runSequences() {
 export async function tick() {
   await ingestSearches()
 
-  // Each active campaign pulls, scores, researches and drafts for itself.
+  // Replies before anything writes: a lead who answered must not get another email,
+  // and must not have one drafted for them either — that is a wasted model call.
+  const replies = await checkReplies().catch((error) => {
+    console.error('reply check failed', error)
+    return 0
+  })
+
+  // Each active campaign pulls, scores and drafts for itself.
   const active = (await db()`
     select id from campaigns where status = 'active' order by id`) as { id: number }[]
   for (const campaign of active) {
@@ -373,10 +380,5 @@ export async function tick() {
     }
   }
 
-  // Replies first: a lead who answered must not get the next step.
-  const replies = await checkReplies().catch((error) => {
-    console.error('reply check failed', error)
-    return 0
-  })
   return { replies, ...(await runSequences()) }
 }
