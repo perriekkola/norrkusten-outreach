@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useActionState, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { Hint } from '@/components/hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -69,9 +70,15 @@ export function DraftCard({ message }: { message: OutboxRow }) {
 
         <div className="flex flex-wrap gap-2">
           {message.status === 'draft' ? (
-            <Button size="sm" disabled={!!busy} onClick={() => act('approve', approveMessages)}>
-              {busy === 'approve' ? 'Approving…' : 'Approve'}
-            </Button>
+            <>
+              <Button size="sm" disabled={!!busy} onClick={() => act('approve', approveMessages)}>
+                {busy === 'approve' ? 'Approving…' : 'Approve'}
+              </Button>
+              <Hint>
+                Queues it. The next cron run sends it, highest-scoring leads first. Use Send now
+                if you want it gone immediately.
+              </Hint>
+            </>
           ) : null}
           <Button
             size="sm"

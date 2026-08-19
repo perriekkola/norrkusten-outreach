@@ -188,21 +188,47 @@ export async function sendMessage(messageId: number) {
 
 const ENROL_LIMIT = 500
 const SCORE_LIMIT = 40
+const DRAFT_LIMIT = 25
+/** Stop starting new work with headroom under the 300s function limit. */
+const PASS_BUDGET_MS = 170_000
 
-/** Bounded concurrency; every stage below has to fit one function invocation. */
-async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
+/**
+ * Bounded concurrency with a wall-clock deadline. Drafting a lead can take a minute
+ * (web research plus a thinking model), so an unbounded pass over 25 leads blows past
+ * the function timeout and the caller gets nothing back. Workers stop picking up new
+ * items once the deadline passes; whatever is in flight finishes.
+ */
+async function mapLimit<T>(
+  items: T[],
+  limit: number,
+  deadline: number,
+  work: (item: T) => Promise<void>,
+) {
   const queue = [...items]
+  let failed = 0
   await Promise.all(
     Array.from({ length: Math.min(limit, queue.length) }, async () => {
       for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+        if (Date.now() > deadline) return
         try {
           await work(item)
         } catch (error) {
+          failed++
           console.error('pipeline item failed', error)
         }
       }
     }),
   )
+  return { failed }
+}
+
+export type CampaignPass = {
+  enrolled: number
+  scored: number
+  drafted: number
+  failed: number
+  unscored: number
+  due: number
 }
 
 /**
@@ -212,9 +238,11 @@ async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise
  * expensive step and only drafting uses it), then draft what is due.
  * Safe to run repeatedly — every stage skips work already done.
  */
-export async function runCampaign(campaignId: number) {
+export async function runCampaign(campaignId: number): Promise<CampaignPass> {
+  const deadline = Date.now() + PASS_BUDGET_MS
+  const empty = { enrolled: 0, scored: 0, drafted: 0, failed: 0, unscored: 0, due: 0 }
   const [campaign] = (await db()`select * from campaigns where id = ${campaignId}`) as Campaign[]
-  if (!campaign) return { enrolled: 0, scored: 0, drafted: 0 }
+  if (!campaign) return empty
 
   // 1. Enrol anything from the source searches that is not already in.
   let enrolled = 0
@@ -232,13 +260,14 @@ export async function runCampaign(campaignId: number) {
 
   // 2. Score the unscored against this campaign's ICP.
   let scored = 0
+  let failed = 0
   if (campaign.icp.trim()) {
     const unscored = (await db()`
       select e.id, e.lead_id from enrollments e
        where e.campaign_id = ${campaignId} and e.score is null
        order by e.id limit ${SCORE_LIMIT}`) as { id: number; lead_id: number }[]
 
-    await mapLimit(unscored, 5, async (row) => {
+    const pass = await mapLimit(unscored, 5, deadline, async (row) => {
       const [lead] = (await db()`select * from leads where id = ${row.lead_id}`) as Lead[]
       if (!lead) return
       const result = await qualifyLead(lead, campaign.icp)
@@ -249,6 +278,7 @@ export async function runCampaign(campaignId: number) {
          where id = ${row.id}`
       scored++
     })
+    failed += pass.failed
   }
 
   // 3. Draft what is due, best-scoring first. Drafting researches as it goes.
@@ -256,14 +286,27 @@ export async function runCampaign(campaignId: number) {
     select id from enrollments
      where campaign_id = ${campaignId} and status = 'active'
        and next_send_at <= now() and score >= ${campaign.min_score}::int
-     order by score desc, next_send_at limit 25`) as { id: number }[]
+     order by score desc, next_send_at limit ${DRAFT_LIMIT}`) as { id: number }[]
 
   let drafted = 0
-  await mapLimit(due, 4, async (row) => {
+  const draftPass = await mapLimit(due, 4, deadline, async (row) => {
     if (await draftForEnrollment(row.id)) drafted++
   })
+  failed += draftPass.failed
 
-  return { enrolled, scored, drafted }
+  // What is still outstanding, so the caller can say whether another pass is needed.
+  const [left] = (await db()`
+    select
+      (select count(*) from enrollments
+        where campaign_id = ${campaignId} and score is null)::int as unscored,
+      (select count(*) from enrollments e
+        where e.campaign_id = ${campaignId} and e.status = 'active'
+          and e.next_send_at <= now() and e.score >= ${campaign.min_score}::int
+          and not exists (select 1 from messages m
+                           where m.enrollment_id = e.id and m.step = e.step))::int as due
+  `) as { unscored: number; due: number }[]
+
+  return { enrolled, scored, drafted, failed, unscored: left.unscored, due: left.due }
 }
 
 /** One pass: draft what is due, send what is approved. */

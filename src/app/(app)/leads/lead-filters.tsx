@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Hint } from '@/components/hint'
 import {
   Select,
   SelectContent,
@@ -53,7 +54,13 @@ export function LeadFilters({
       }}
     >
       <div className="space-y-1">
-        <Label className="text-muted-foreground text-xs">Source search</Label>
+        <Label className="text-muted-foreground flex items-center gap-1 text-xs">
+          Source search
+          <Hint>
+            Which Apify run a lead came from. Useful for spot-checking one batch — campaigns pick
+            their own sources, so you rarely need to enrol by hand from here.
+          </Hint>
+        </Label>
         <Select
           value={source ? String(source) : ANY}
           onValueChange={(value) => apply({ source: value === ANY ? null : value })}

@@ -12,7 +12,10 @@ import {
 } from '@/components/ui/table'
 import { cancelSearch, deleteSearch, refreshSearches } from '@/lib/actions'
 import { db, type Search } from '@/lib/db'
+import { ingestSearches } from '@/lib/engine'
+import { Hint } from '@/components/hint'
 import { SearchForm } from './search-form'
+import { SearchPoller } from './search-poller'
 
 const STATUS_VARIANT = {
   running: 'secondary',
@@ -27,8 +30,15 @@ function summarise(input: Record<string, unknown>) {
     .join(' · ')
 }
 
+export const maxDuration = 300
+
 export default async function SearchesPage() {
+  // Pull in anything Apify finished since the last look, so the page never shows a
+  // stale "running". Cheap: one status call per in-flight run, and a no-op if none.
+  await ingestSearches().catch((error) => console.error('ingest on load failed', error))
+
   const searches = (await db()`select * from searches order by created_at desc limit 50`) as Search[]
+  const running = searches.filter((search) => search.status === 'running').length
 
   return (
     <>
@@ -36,12 +46,19 @@ export default async function SearchesPage() {
         title="Searches"
         description="Source leads from Apify. Runs finish in the background — results import automatically."
       >
-        <form action={refreshSearches}>
+        <form action={refreshSearches} className="flex items-center gap-1.5">
           <SubmitButton variant="outline" size="sm" pendingLabel="Checking…">
             Check for results
           </SubmitButton>
+          <Hint>
+            Asks Apify whether each running search has finished and imports the leads. This page
+            already does it on load and every 15 seconds while a search is running, so you rarely
+            need the button.
+          </Hint>
         </form>
       </PageHeader>
+
+      <SearchPoller running={running} />
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="pb-0">

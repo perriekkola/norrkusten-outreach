@@ -174,11 +174,34 @@ export async function deleteSearch(formData: FormData) {
  * Scores enrolled leads against their campaign's own ICP. Scoring is per pairing:
  * the same lead can be strong for one campaign and weak for another.
  */
-/** Pull, score, research the qualifiers and draft what is due — one pass. */
-export async function runCampaignNow(formData: FormData) {
+/** One bounded pass: enrol, score, draft. Reports what it did and what is left. */
+export async function runCampaignNow(_prev: State, formData: FormData): Promise<State> {
   await requireUser()
-  await runCampaign(Number(formData.get('campaignId')))
+  const pass = await runCampaign(Number(formData.get('campaignId')))
   refresh()
+
+  const did = [
+    pass.enrolled && `enrolled ${pass.enrolled}`,
+    pass.scored && `scored ${pass.scored}`,
+    pass.drafted && `drafted ${pass.drafted}`,
+  ].filter(Boolean)
+
+  const left = [
+    pass.unscored && `${pass.unscored} still unscored`,
+    pass.due && `${pass.due} still to draft`,
+  ].filter(Boolean)
+
+  if (!did.length && !left.length) return { ok: 'Nothing to do — everything is up to date.' }
+
+  return {
+    ok: [
+      did.length ? did.join(', ') : 'Nothing new to do',
+      left.length ? `${left.join(' and ')} — run again to continue` : null,
+      pass.failed ? `${pass.failed} failed, see the logs` : null,
+    ]
+      .filter(Boolean)
+      .join('. '),
+  }
 }
 
 /** Removes everything the last qualification scored below the bar. */

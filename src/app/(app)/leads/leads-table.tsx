@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { Hint } from '@/components/hint'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -62,8 +63,12 @@ export function LeadsTable({
   return (
     <div className="space-y-4">
       <div className="bg-muted/40 flex flex-wrap items-center gap-2 rounded-lg border p-2">
-        <span className="text-muted-foreground px-2 text-sm">
+        <span className="text-muted-foreground flex items-center gap-1.5 px-2 text-sm">
           {selected.length ? `${selected.length} selected` : 'Select leads to act on them'}
+          <Hint>
+            This is the raw pool of everything scraped. Scoring and emailing happen inside a
+            campaign, so a lead here is not contacted until it is enrolled somewhere.
+          </Hint>
         </span>
         {/* Action menus, not form inputs — a <select> that fires on change is the wrong control. */}
         <DropdownMenu>

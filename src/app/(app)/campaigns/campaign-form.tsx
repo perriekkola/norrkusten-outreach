@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import { Hint } from '@/components/hint'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -42,7 +43,13 @@ export function CampaignForm({
           <Input id="name" name="name" defaultValue={campaign?.name} required />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="from_name">Sender name</Label>
+          <Label htmlFor="from_name" className="flex items-center gap-1.5">
+            Sender name
+            <Hint>
+              Who signs the emails. This is the signature only — the actual From address comes
+              from the FROM_EMAIL environment variable.
+            </Hint>
+          </Label>
           <Input
             id="from_name"
             name="from_name"
@@ -53,7 +60,14 @@ export function CampaignForm({
       </div>
 
       <div className="space-y-2">
-        <Label>Pull leads from these searches</Label>
+        <Label className="flex items-center gap-1.5">
+          Pull leads from these searches
+          <Hint>
+            Every lead from the ticked searches is enrolled and scored automatically each time
+            the campaign runs. Re-run a search later and the new leads join on the next pass.
+            Leave all unticked to enrol by hand from the Leads page instead.
+          </Hint>
+        </Label>
         <div className="space-y-2 rounded-lg border p-3">
           {searches.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -80,7 +94,14 @@ export function CampaignForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="min_score">Minimum score to contact</Label>
+        <Label htmlFor="min_score" className="flex items-center gap-1.5">
+          Minimum score to contact
+          <Hint>
+            The gate on everything downstream. Below this a lead is never researched, drafted or
+            emailed — but it stays enrolled and visible so you can read why it scored low.
+            50 is a reasonable default; raise it if the drafts feel like a stretch.
+          </Hint>
+        </Label>
         <Input
           id="min_score"
           name="min_score"
@@ -97,7 +118,15 @@ export function CampaignForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="icp">Who this campaign targets</Label>
+        <Label htmlFor="icp" className="flex items-center gap-1.5">
+          Who this campaign targets
+          <Hint>
+            The scoring rubric, and the only thing scoring reads besides the scraped lead data.
+            Say who is a strong fit, who is medium, who is a poor fit, and why. Naming who is a
+            poor fit matters as much as who is good — it is what stops competitors and
+            irrelevant industries scoring high.
+          </Hint>
+        </Label>
         <Textarea
           id="icp"
           name="icp"
@@ -111,7 +140,14 @@ export function CampaignForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="offer">What you are selling</Label>
+        <Label htmlFor="offer" className="flex items-center gap-1.5">
+          What you are selling
+          <Hint>
+            Used when writing each email, not when scoring. Claude treats this as fact, so
+            anything inaccurate here becomes a claim in a real email. Include the concrete
+            detail worth citing — a deadline, what changes, the specific outcome.
+          </Hint>
+        </Label>
         <Textarea
           id="offer"
           name="offer"
@@ -123,7 +159,10 @@ export function CampaignForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="language">Language</Label>
+          <Label htmlFor="language" className="flex items-center gap-1.5">
+            Language
+            <Hint>The language Claude writes the emails in. It does not filter leads.</Hint>
+          </Label>
           <Select name="language" defaultValue={campaign?.language ?? 'sv'}>
             <SelectTrigger id="language" className="w-full">
               <SelectValue />
@@ -151,7 +190,14 @@ export function CampaignForm({
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <Label>Sequence</Label>
+          <Label className="flex items-center gap-1.5">
+            Sequence
+            <Hint>
+              Goals, not templates. Claude writes a fresh email per lead from the goal, the
+              offer, the research and the earlier emails in that thread. A reply stops the
+              sequence for that lead automatically.
+            </Hint>
+          </Label>
           <Button
             type="button"
             size="sm"
@@ -165,8 +211,11 @@ export function CampaignForm({
         {steps.map((step, index) => (
           <div key={index} className="flex gap-3 rounded-lg border p-3">
             <div className="w-28 shrink-0 space-y-1">
-              <Label className="text-xs">
+              <Label className="flex items-center gap-1 text-xs">
                 {index === 0 ? 'Send' : 'Wait (days)'}
+                {index === 1 ? (
+                  <Hint>Days to wait after the previous email in this sequence was sent.</Hint>
+                ) : null}
               </Label>
               <Input
                 name="step_delay"
@@ -179,7 +228,15 @@ export function CampaignForm({
               {index === 0 ? <input type="hidden" name="step_delay" value={0} /> : null}
             </div>
             <div className="flex-1 space-y-1">
-              <Label className="text-xs">Goal of this email</Label>
+              <Label className="flex items-center gap-1 text-xs">
+                Goal of this email
+                {index === 0 ? (
+                  <Hint>
+                    What this email should achieve, in your words. Be specific about what to
+                    avoid too — &ldquo;no product presentation, no price list&rdquo; works.
+                  </Hint>
+                ) : null}
+              </Label>
               <Textarea name="step_goal" rows={2} defaultValue={step.goal} />
             </div>
             <Button

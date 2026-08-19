@@ -13,13 +13,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  deleteCampaign,
-  dropWeak,
-  runCampaignNow,
-  setCampaignStatus,
-  unenroll,
-} from '@/lib/actions'
+import { deleteCampaign, dropWeak, setCampaignStatus, unenroll } from '@/lib/actions'
+import { Hint } from '@/components/hint'
+import { RunButton } from './run-button'
 import { db, type Campaign } from '@/lib/db'
 import { CampaignForm } from '../campaign-form'
 
@@ -44,6 +40,8 @@ const VERDICT_COLOR: Record<string, string> = {
   medium: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
   weak: 'bg-muted text-muted-foreground',
 }
+
+export const maxDuration = 300
 
 export default async function CampaignPage({ params }: PageProps<'/campaigns/[id]'>) {
   const { id } = await params
@@ -78,17 +76,24 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         title={campaign.name}
         description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
-        <form action={runCampaignNow}>
+        <RunButton campaignId={campaign.id} disabled={!campaign.icp.trim()} />
+        <form action={dropWeak} className="flex items-center gap-1.5">
           <input type="hidden" name="campaignId" value={campaign.id} />
-          <SubmitButton size="sm" pendingLabel="Running…" disabled={!campaign.icp.trim()}>
-            Run now
+          <SubmitButton
+            size="sm"
+            variant="ghost"
+            pendingLabel="Removing…"
+            disabled={belowFloor === 0}
+          >
+            {belowFloor === 0
+              ? `Nobody below ${campaign.min_score}`
+              : `Drop ${belowFloor} below ${campaign.min_score}`}
           </SubmitButton>
-        </form>
-        <form action={dropWeak}>
-          <input type="hidden" name="campaignId" value={campaign.id} />
-          <SubmitButton size="sm" variant="ghost" pendingLabel="Removing…">
-            Drop below {campaign.min_score}
-          </SubmitButton>
+          <Hint>
+            Permanently removes enrollments scoring under the campaign&apos;s minimum, so they
+            stop cluttering the list. Anyone already emailed is kept. Raise the minimum in
+            Settings if you want to cut more.
+          </Hint>
         </form>
         <form action={setCampaignStatus}>
           <input type="hidden" name="id" value={campaign.id} />
