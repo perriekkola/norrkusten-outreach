@@ -106,6 +106,29 @@ assert.deepEqual(
   'a lead holds a different score per campaign',
 )
 
+// Research skips what is done unless forced, so repeat clicks walk forward.
+await db.exec(`update leads set research = 'done' where id = 1`)
+assert.deepEqual(
+  await q(
+    `select id from leads
+      where id = any($1::int[]) and ($2::boolean or research is null)
+      order by id limit 15`,
+    [[1, 2], false],
+  ),
+  [{ id: 2 }],
+  'unforced research skips the already-researched lead',
+)
+assert.equal(
+  (await q(
+    `select id from leads
+      where id = any($1::int[]) and ($2::boolean or research is null)
+      order by id limit 15`,
+    [[1, 2], true],
+  )).length,
+  2,
+  'force re-runs everything selected',
+)
+
 const [funnel] = await q(`
   select (select count(*) from leads)::int as leads,
          (select count(*) from messages where status = 'sent')::int as sent,

@@ -223,7 +223,19 @@ export async function dropWeak(formData: FormData) {
 
 export async function researchLeads(formData: FormData) {
   await requireUser()
-  await mapLimit(ids(formData).slice(0, RESEARCH_BATCH), 3, async (id) => {
+  const force = formData.get('force') === '1'
+  const selected = ids(formData)
+  if (!selected.length) return
+
+  // Skip what is already researched, so clicking again walks forward through a
+  // large selection instead of redoing the same first batch — and never spends
+  // twice on the same company. `force` re-runs one lead from its detail page.
+  const targets = (await db()`
+    select id from leads
+     where id = any(${selected}::int[]) and (${force}::boolean or research is null)
+     order by id limit ${RESEARCH_BATCH}`) as { id: number }[]
+
+  await mapLimit(targets, 3, async ({ id }) => {
     const [lead] = (await db()`select * from leads where id = ${id}`) as Lead[]
     if (!lead) return
     const brief = await researchCompany(lead)

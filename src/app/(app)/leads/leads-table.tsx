@@ -131,8 +131,9 @@ export function LeadsTable({
       </div>
 
       <p className="text-muted-foreground -mt-2 px-2 text-xs">
-        Research runs on up to 15 leads per click so the request finishes inside the function
-        timeout. Scoring happens inside a campaign, against that campaign&apos;s own profile.
+        Research runs on up to 15 unresearched leads per click, so click again to continue
+        through a bigger selection — it never re-researches a company. Scoring happens inside a
+        campaign, against that campaign&apos;s own profile.
       </p>
 
       <Card className="py-0">

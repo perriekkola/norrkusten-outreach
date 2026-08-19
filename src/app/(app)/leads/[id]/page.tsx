@@ -52,8 +52,9 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
       >
         <form action={researchLeads}>
           <input type="hidden" name="leadId" value={lead.id} />
+          <input type="hidden" name="force" value="1" />
           <SubmitButton size="sm" variant="outline" pendingLabel="Researching…">
-            Research
+            {lead.research ? 'Research again' : 'Research'}
           </SubmitButton>
         </form>
         <form action={setLeadStatus}>
