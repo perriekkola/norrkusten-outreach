@@ -1,11 +1,9 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
-import { SubmitButton } from '@/components/submit-button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { generateDrafts } from '@/lib/actions'
-import { Hint } from '@/components/hint'
+import { DraftButton } from './draft-button'
 import { db } from '@/lib/db'
 import { OutboxTable } from './outbox-table'
 
@@ -53,16 +51,7 @@ export default async function OutboxPage() {
         title="Outbox"
         description="Drafts wait here until you approve them. The cron sends everything approved twice a day — or press Send now."
       >
-        <form action={generateDrafts} className="flex items-center gap-1.5">
-          <SubmitButton size="sm" variant="outline" pendingLabel="Drafting…">
-            Draft due emails
-          </SubmitButton>
-          <Hint>
-            Writes the next email for every enrolled lead whose turn has come, across all
-            campaigns. The same thing each campaign&apos;s Run now does, and the cron does it
-            too — this is just for impatience.
-          </Hint>
-        </form>
+        <DraftButton />
       </PageHeader>
 
       <Tabs defaultValue="pending">

@@ -237,7 +237,7 @@ export async function draftEmail(args: {
         content: [
           `What we sell:\n${campaign.offer}`,
           `Goal of this email (step ${step + 1} of ${campaign.steps.length}):\n${goal}`,
-          campaign.links.length
+          campaign.links?.length
             ? `Include ${campaign.links.length === 1 ? 'this link' : 'the most relevant of these links'} ` +
               `as a bare URL on its own line. Never more than one link per email, and never ` +
               `a URL that is not in this list:\n${campaign.links.join('\n')}`

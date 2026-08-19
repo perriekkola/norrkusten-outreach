@@ -28,25 +28,6 @@ const list = (value: FormDataEntryValue | null) =>
 const ids = (formData: FormData) =>
   formData.getAll('leadId').map((v) => Number(v)).filter((n) => Number.isFinite(n))
 
-/**
- * Bulk AI work runs inside one request, so it has to fit the function timeout.
- * Bounded concurrency + a hard cap keeps a 300-lead selection from blowing it.
- */
-async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
-  const queue = [...items]
-  await Promise.all(
-    Array.from({ length: Math.min(limit, queue.length) }, async () => {
-      for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
-        try {
-          await work(item)
-        } catch (error) {
-          console.error('bulk item failed', error)
-        }
-      }
-    }),
-  )
-}
-
 
 /* --------------------------------------------------------------------- auth */
 
@@ -450,16 +431,33 @@ export async function unenroll(formData: FormData) {
 
 /* ------------------------------------------------------------------- outbox */
 
-export async function generateDrafts(formData: FormData) {
+export async function generateDrafts(_prev: State, formData: FormData): Promise<State> {
   await requireUser()
   const campaignId = Number(formData.get('campaignId'))
   const due = (await db()`
-    select id from enrollments
-     where status = 'active' and next_send_at <= now()
-       and (${campaignId || null}::int is null or campaign_id = ${campaignId || null}::int)
-     order by next_send_at limit 25`) as { id: number }[]
-  await mapLimit(due, 4, (enrollment) => draftForEnrollment(enrollment.id).then(() => {}))
+    select e.id from enrollments e join campaigns c on c.id = e.campaign_id
+     where e.status = 'active' and e.next_send_at <= now() and e.score >= c.min_score
+       and (${campaignId || null}::int is null or e.campaign_id = ${campaignId || null}::int)
+     order by e.score desc nulls last, e.next_send_at limit 25`) as { id: number }[]
+
+  if (!due.length) return { ok: 'Nothing due right now.' }
+
+  let drafted = 0
+  let failed = 0
+  let reason = ''
+  for (const enrollment of due) {
+    try {
+      if (await draftForEnrollment(enrollment.id)) drafted++
+    } catch (error) {
+      failed++
+      if (!reason) reason = describeApiError(error)
+      console.error('draft failed', enrollment.id, error)
+    }
+  }
   refresh()
+
+  if (!failed) return { ok: `Drafted ${drafted}.` }
+  return { error: `Drafted ${drafted}, ${failed} failed: ${reason}` }
 }
 
 export async function updateDraft(_prev: State, formData: FormData): Promise<State> {

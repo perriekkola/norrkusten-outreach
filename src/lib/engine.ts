@@ -70,20 +70,21 @@ export async function ingestSearches() {
 
 /** Create the draft for one enrollment's current step. Returns the message id. */
 export async function draftForEnrollment(enrollmentId: number): Promise<number | null> {
+  // row_to_json rather than a column list: the list silently went stale when `links`
+  // was added, campaign.links came back undefined, and every draft threw.
   const rows = (await db()`
-    select e.step, e.lead_id, e.angle, c.id as campaign_id, c.name, c.icp, c.offer, c.language,
-           c.from_name, c.auto_send, c.steps, c.status, c.created_at
+    select e.step, e.lead_id, e.angle, row_to_json(c) as campaign
       from enrollments e join campaigns c on c.id = e.campaign_id
-     where e.id = ${enrollmentId}`) as (Omit<Campaign, 'id'> & {
+     where e.id = ${enrollmentId}`) as {
     step: number
     lead_id: number
     angle: string | null
-    campaign_id: number
-  })[]
+    campaign: Campaign
+  }[]
   const row = rows[0]
   if (!row) return null
 
-  const campaign: Campaign = { ...row, id: row.campaign_id }
+  const campaign = row.campaign
   if (row.step >= campaign.steps.length) {
     await db()`update enrollments set status = 'done' where id = ${enrollmentId}`
     return null
