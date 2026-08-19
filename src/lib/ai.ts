@@ -258,42 +258,56 @@ export async function draftEmail(args: {
 /* ----------------------------------------------------------------- campaign */
 
 const CampaignDraft = z.object({
-  name: z.string().describe('Short internal name. Not a subject line.'),
+  name: z
+    .string()
+    .max(40)
+    .describe('Internal label, under 40 characters. No tagline, no colon-and-explainer.'),
   language: z.enum(['sv', 'en', 'no', 'da', 'fi']),
+  source_search_ids: z
+    .array(z.number())
+    .describe(
+      'Which of the offered searches feed this campaign. Pick every one whose label plausibly ' +
+        'matches the ICP; pick none only if none of them could. Never leave this empty when a ' +
+        'plausible search exists — an empty list means the campaign pulls no leads and does nothing.',
+    ),
   icp: z
     .string()
     .describe(
-      'The scoring rubric. Who is a strong fit (75-100), medium (40-74) and poor (0-39), ' +
-        'with reasons. Must name who is a POOR fit, including competitors, or everything scores high.',
+      'The scoring rubric. Who is a strong fit (75-100), medium (40-74) and poor (0-39), with ' +
+        'reasons. The poor band must name competitors who sell the same thing, by name where ' +
+        'known, or every lead scores high and the score floor is useless.',
     ),
   offer: z
     .string()
     .describe(
-      'What is being sold, in verifiable detail: course names, format, length, price, what it ' +
-        'covers, who it is for. Only facts found on the pages or given by the user.',
+      'What is being sold, in verifiable detail: exact course names, format, length, price, ' +
+        'terms, what it covers, who it is for. Only what the source pages state.',
     ),
   guidelines: z
     .string()
     .describe(
-      'How the emails should read: the single call to action, tone, and an explicit list of ' +
-        'what never to do. Match the ask to the price — a cheap self-serve product should ' +
-        'never ask for a meeting.',
+      'How the emails must read: the single call to action, tone, and an explicit list of what ' +
+        'never to do. Must forbid repeating any marketing superlative found on the source page.',
     ),
   min_score: z.number().min(0).max(100),
   steps: z
     .array(
       z.object({
         delay_days: z.number().min(0).max(60),
-        goal: z.string().describe('What this email should achieve, and what to avoid.'),
+        goal: z
+          .string()
+          .describe('The one argument this email makes, and what it must not do. Be explicit.'),
       }),
     )
     .min(2)
-    .max(5)
-    .describe('First step must have delay_days 0. Later delays are days since the previous send.'),
+    .max(4)
+    .describe(
+      'Three steps unless there is a clear reason for two or four. First delay_days is 0; later ' +
+        'ones are days since the previous send. Every step must carry a different argument — two ' +
+        'steps that both push urgency is one step too many.',
+    ),
 })
 
-/** Links are passed through from the user's brief, never echoed by the model — it could
- *  silently mangle a URL, and a broken link in a real email is worse than no link. */
 export type CampaignDraft = z.infer<typeof CampaignDraft> & { links: string[] }
 
 /** Reads whatever the user pasted — links get fetched, claims get checked. */
@@ -336,6 +350,7 @@ export async function draftCampaign(args: {
   brief: string
   links: string[]
   senderName: string
+  searches: { id: number; label: string; leads: number }[]
 }): Promise<CampaignDraft> {
   const sources = await readSources(args.brief, args.links)
 
@@ -343,15 +358,35 @@ export async function draftCampaign(args: {
     model: MODEL.campaign,
     max_tokens: 16000,
     output_config: { format: zodOutputFormat(CampaignDraft) },
-    system:
-      'You set up cold outreach campaigns. Everything you write is read by another model that ' +
-      'treats it as fact, so an invented price or claim ends up in a real email to a real ' +
-      'person. Use only what the research below establishes. Where something is unknown, leave ' +
-      'it out rather than guessing.\n\n' +
-      'Two things people get wrong and you must not: the ICP has to say who is a POOR fit, ' +
-      'including competitors who sell the same thing, or every lead scores high and the filter ' +
-      'is useless. And the ask has to match the price — a self-serve product costing a few ' +
-      'thousand kronor should send people to the page to read and buy, never to a meeting.',
+    system: [
+      'You set up cold outreach campaigns. Every field you write is consumed by another model',
+      'that treats it as fact, and the result is sent to a real person who may know the subject',
+      'better than you. Write only what the research below establishes.',
+      '',
+      'Claims and sourcing:',
+      '- The offer may contain only what the source pages state. If the page does not give an',
+      '  access period, a guarantee or a term of sale, do not supply one.',
+      '- A dated regulatory deadline is a fact and may be used. Legal consequences derived from',
+      '  it are not: never assert that there is no transition period, that something is mandatory,',
+      '  that a party is liable, or that an authority requires anything, even if it seems to',
+      '  follow. Say what the course covers instead of what the law obliges.',
+      '- If the source page makes a marketing superlative ("the most comprehensive in Sweden"),',
+      '  record it in the offer as the page\'s claim, and forbid it in the guidelines. Repeating a',
+      '  superlative to an engineer costs credibility.',
+      '',
+      'Two things people get wrong and you must not:',
+      '- The ICP has to say who is a POOR fit, competitors who sell the same thing included, by',
+      '  name where you know them. Without that band every lead scores high and the floor is dead.',
+      '- The ask has to match the price. A self-serve product costing a few thousand kronor sends',
+      '  people to the page to read and buy. It never asks for a meeting, a call or fifteen',
+      '  minutes, and the guidelines must forbid those explicitly.',
+      '',
+      'Shape of the sequence: three emails is the default. Each one makes a different argument —',
+      'if you cannot give a step its own argument, do not add the step. Do not write a fifth.',
+      '',
+      'Pick the source searches from the list given. Leaving that empty produces a campaign that',
+      'silently does nothing, so only do it if no offered search could match the ICP at all.',
+    ].join('\n'),
     messages: [
       {
         role: 'user',
@@ -359,6 +394,10 @@ export async function draftCampaign(args: {
           `Emails will be signed by ${args.senderName}.`,
           `What the user asked for:\n${args.brief}`,
           args.links.length ? `Links to point at:\n${args.links.join('\n')}` : '',
+          args.searches.length
+            ? 'Searches available as lead sources (pick by id):\n' +
+              args.searches.map((s) => `- id ${s.id}: "${s.label}" (${s.leads} leads)`).join('\n')
+            : 'No searches exist yet — return an empty source_search_ids.',
           `Research:\n${sources}`,
         ]
           .filter(Boolean)

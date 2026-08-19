@@ -89,7 +89,7 @@ export function CampaignForm({
                 <Checkbox
                   name="source_search_ids"
                   value={search.id}
-                  defaultChecked={campaign?.source_search_ids?.includes(search.id)}
+                  defaultChecked={initial?.source_search_ids?.includes(search.id)}
                 />
                 {search.label}
                 <span className="text-muted-foreground text-xs">({search.leads})</span>
