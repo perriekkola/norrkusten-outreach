@@ -77,6 +77,10 @@ export type Campaign = {
   language: string
   from_name: string | null
   auto_send: boolean
+  /** Searches this campaign pulls leads from. */
+  source_search_ids: number[]
+  /** Leads below this never get drafted or sent. */
+  min_score: number
   steps: CampaignStep[]
   status: 'active' | 'paused'
   created_at: string

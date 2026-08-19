@@ -1,6 +1,6 @@
 import 'server-only'
 import { getDatasetItems, getRun } from './apify'
-import { draftEmail } from './ai'
+import { draftEmail, qualifyLead, researchCompany } from './ai'
 import { db, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
 import { checkReplies } from './replies'
@@ -175,13 +175,111 @@ export async function sendMessage(messageId: number) {
      where id = ${enrollment.id}`
 }
 
+const ENROL_LIMIT = 500
+const SCORE_LIMIT = 40
+const RESEARCH_LIMIT = 15
+
+/** Bounded concurrency; every stage below has to fit one function invocation. */
+async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
+  const queue = [...items]
+  await Promise.all(
+    Array.from({ length: Math.min(limit, queue.length) }, async () => {
+      for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+        try {
+          await work(item)
+        } catch (error) {
+          console.error('pipeline item failed', error)
+        }
+      }
+    }),
+  )
+}
+
+/**
+ * Everything a campaign does to itself, in order and bounded so one pass fits a
+ * single invocation: pull leads from its source searches, score the new ones
+ * against its own ICP, research only those that clear the floor (research is the
+ * expensive step and only drafting uses it), then draft what is due.
+ * Safe to run repeatedly — every stage skips work already done.
+ */
+export async function runCampaign(campaignId: number) {
+  const [campaign] = (await db()`select * from campaigns where id = ${campaignId}`) as Campaign[]
+  if (!campaign) return { enrolled: 0, scored: 0, researched: 0, drafted: 0 }
+
+  // 1. Enrol anything from the source searches that is not already in.
+  let enrolled = 0
+  if (campaign.source_search_ids.length) {
+    const inserted = (await db()`
+      insert into enrollments (campaign_id, lead_id)
+      select ${campaignId}, l.id from leads l
+       where l.search_id = any(${campaign.source_search_ids}::int[])
+         and l.status <> 'rejected'
+       order by l.id limit ${ENROL_LIMIT}
+      on conflict (campaign_id, lead_id) do nothing
+      returning id`) as { id: number }[]
+    enrolled = inserted.length
+  }
+
+  // 2. Score the unscored against this campaign's ICP.
+  let scored = 0
+  if (campaign.icp.trim()) {
+    const unscored = (await db()`
+      select e.id, e.lead_id from enrollments e
+       where e.campaign_id = ${campaignId} and e.score is null
+       order by e.id limit ${SCORE_LIMIT}`) as { id: number; lead_id: number }[]
+
+    await mapLimit(unscored, 5, async (row) => {
+      const [lead] = (await db()`select * from leads where id = ${row.lead_id}`) as Lead[]
+      if (!lead) return
+      const result = await qualifyLead(lead, campaign.icp)
+      await db()`
+        update enrollments
+           set score = ${result.score}, verdict = ${result.verdict},
+               reasons = ${result.reasons}, angle = ${result.angle}
+         where id = ${row.id}`
+      scored++
+    })
+  }
+
+  // 3. Research only what clears the floor — nothing else ever gets an email.
+  const toResearch = (await db()`
+    select distinct l.id from enrollments e join leads l on l.id = e.lead_id
+     where e.campaign_id = ${campaignId} and e.score >= ${campaign.min_score}::int
+       and l.research is null
+     order by l.id limit ${RESEARCH_LIMIT}`) as { id: number }[]
+
+  let researched = 0
+  await mapLimit(toResearch, 3, async (row) => {
+    const [lead] = (await db()`select * from leads where id = ${row.id}`) as Lead[]
+    if (!lead) return
+    const brief = await researchCompany(lead)
+    await db()`update leads set research = ${brief} where id = ${row.id}`
+    researched++
+  })
+
+  // 4. Draft what is due, best-scoring first.
+  const due = (await db()`
+    select id from enrollments
+     where campaign_id = ${campaignId} and status = 'active'
+       and next_send_at <= now() and score >= ${campaign.min_score}::int
+     order by score desc, next_send_at limit 25`) as { id: number }[]
+
+  let drafted = 0
+  await mapLimit(due, 4, async (row) => {
+    if (await draftForEnrollment(row.id)) drafted++
+  })
+
+  return { enrolled, scored, researched, drafted }
+}
+
 /** One pass: draft what is due, send what is approved. */
 export async function runSequences() {
   const due = (await db()`
     select e.id from enrollments e
       join campaigns c on c.id = e.campaign_id
      where e.status = 'active' and c.status = 'active' and e.next_send_at <= now()
-     order by e.next_send_at limit 100`) as { id: number }[]
+       and e.score >= c.min_score
+     order by e.score desc, e.next_send_at limit 100`) as { id: number }[]
 
   const drafted: number[] = []
   for (const enrollment of due) {
@@ -193,10 +291,11 @@ export async function runSequences() {
     }
   }
 
+  // Highest-scoring leads go out first, so a partial run still hits the best ones.
   const approved = (await db()`
-    select id from messages where status = 'approved' order by created_at limit 100`) as {
-    id: number
-  }[]
+    select m.id from messages m join enrollments e on e.id = m.enrollment_id
+     where m.status = 'approved'
+     order by e.score desc nulls last, m.created_at limit 100`) as { id: number }[]
 
   let sent = 0
   for (const message of approved) {
@@ -213,6 +312,18 @@ export async function runSequences() {
 
 export async function tick() {
   await ingestSearches()
+
+  // Each active campaign pulls, scores, researches and drafts for itself.
+  const active = (await db()`
+    select id from campaigns where status = 'active' order by id`) as { id: number }[]
+  for (const campaign of active) {
+    try {
+      await runCampaign(campaign.id)
+    } catch (error) {
+      console.error('campaign pass failed', campaign.id, error)
+    }
+  }
+
   // Replies first: a lead who answered must not get the next step.
   const replies = await checkReplies().catch((error) => {
     console.error('reply check failed', error)

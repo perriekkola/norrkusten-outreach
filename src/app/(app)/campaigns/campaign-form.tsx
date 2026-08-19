@@ -22,7 +22,13 @@ const DEFAULT_STEPS: CampaignStep[] = [
   { delay_days: 7, goal: 'Break-up: short, no pressure, leave the door open.' },
 ]
 
-export function CampaignForm({ campaign }: { campaign?: Campaign }) {
+export function CampaignForm({
+  campaign,
+  searches,
+}: {
+  campaign?: Campaign
+  searches: { id: number; label: string; leads: number }[]
+}) {
   const [state, action, pending] = useActionState(saveCampaign, {})
   const [steps, setSteps] = useState<CampaignStep[]>(campaign?.steps.length ? campaign.steps : DEFAULT_STEPS)
 
@@ -44,6 +50,50 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
             placeholder="Per Riekkola"
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Pull leads from these searches</Label>
+        <div className="space-y-2 rounded-lg border p-3">
+          {searches.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No searches with leads yet — run one first and this campaign will pick them up.
+            </p>
+          ) : (
+            searches.map((search) => (
+              <label key={search.id} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  name="source_search_ids"
+                  value={search.id}
+                  defaultChecked={campaign?.source_search_ids?.includes(search.id)}
+                />
+                {search.label}
+                <span className="text-muted-foreground text-xs">({search.leads})</span>
+              </label>
+            ))
+          )}
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Every lead from these searches is enrolled and scored automatically. Re-running a search
+          adds the new leads on the next pass.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="min_score">Minimum score to contact</Label>
+        <Input
+          id="min_score"
+          name="min_score"
+          type="number"
+          min={0}
+          max={100}
+          defaultValue={campaign?.min_score ?? 50}
+          className="w-32"
+        />
+        <p className="text-muted-foreground text-xs">
+          Below this, a lead is never researched, drafted or emailed. It stays enrolled so you can
+          see why it scored low.
+        </p>
       </div>
 
       <div className="space-y-2">
@@ -95,7 +145,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm">
           <Checkbox name="auto_send" defaultChecked={campaign?.auto_send} />
-          Send without approval
+          Send without approval, best scores first
         </label>
       </div>
 

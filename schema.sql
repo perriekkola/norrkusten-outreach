@@ -55,6 +55,8 @@ create table if not exists campaigns (
   name       text not null,
   icp        text not null default '',          -- who this campaign targets; drives scoring
   offer      text not null default '',
+  source_search_ids int[] not null default '{}',-- searches this campaign pulls leads from
+  min_score  int not null default 50,           -- below this, never drafted or sent
   language   text not null default 'sv',
   from_name  text,
   auto_send  boolean not null default false,
@@ -117,3 +119,8 @@ alter table leads drop column if exists verdict;
 alter table leads drop column if exists reasons;
 alter table leads drop column if exists angle;
 create index if not exists idx_enroll_score on enrollments(campaign_id, score desc nulls last);
+
+-- A campaign pulls its own leads from named searches and gates on a score floor,
+-- so enrolling, scoring and researching stop being manual steps.
+alter table campaigns add column if not exists source_search_ids int[] not null default '{}';
+alter table campaigns add column if not exists min_score int not null default 50;

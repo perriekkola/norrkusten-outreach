@@ -16,8 +16,7 @@ import {
 import {
   deleteCampaign,
   dropWeak,
-  generateDrafts,
-  qualifyEnrollments,
+  runCampaignNow,
   setCampaignStatus,
   unenroll,
 } from '@/lib/actions'
@@ -51,6 +50,12 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
   const [campaign] = (await db()`select * from campaigns where id = ${Number(id)}`) as Campaign[]
   if (!campaign) notFound()
 
+  const searches = (await db()`
+    select s.id, s.label, count(l.id)::int as leads
+      from searches s left join leads l on l.search_id = s.id
+     group by s.id, s.label having count(l.id) > 0
+     order by s.created_at desc`) as { id: number; label: string; leads: number }[]
+
   const enrollments = (await db()`
     select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons,
            l.id as lead_id, l.full_name, l.email, l.company_name,
@@ -63,35 +68,26 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
      order by e.score desc nulls last, e.next_send_at limit 500`) as EnrollmentRow[]
 
   const unscored = enrollments.filter((row) => row.score === null).length
+  const belowFloor = enrollments.filter(
+    (row) => row.score !== null && row.score < campaign.min_score,
+  ).length
 
   return (
     <>
       <PageHeader
         title={campaign.name}
-        description={`${campaign.steps.length} steps · ${unscored} unscored`}
+        description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
-        <form action={qualifyEnrollments}>
+        <form action={runCampaignNow}>
           <input type="hidden" name="campaignId" value={campaign.id} />
-          <SubmitButton
-            size="sm"
-            variant="outline"
-            pendingLabel="Scoring…"
-            disabled={!campaign.icp.trim() || unscored === 0}
-          >
-            Score unscored ({unscored})
+          <SubmitButton size="sm" pendingLabel="Running…" disabled={!campaign.icp.trim()}>
+            Run now
           </SubmitButton>
         </form>
         <form action={dropWeak}>
           <input type="hidden" name="campaignId" value={campaign.id} />
-          <input type="hidden" name="floor" value="50" />
           <SubmitButton size="sm" variant="ghost" pendingLabel="Removing…">
-            Drop below 50
-          </SubmitButton>
-        </form>
-        <form action={generateDrafts}>
-          <input type="hidden" name="campaignId" value={campaign.id} />
-          <SubmitButton size="sm" variant="outline" pendingLabel="Drafting…">
-            Draft due emails
+            Drop below {campaign.min_score}
           </SubmitButton>
         </form>
         <form action={setCampaignStatus}>
@@ -140,7 +136,12 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                   </TableHeader>
                   <TableBody>
                     {enrollments.map((row) => (
-                      <TableRow key={row.id}>
+                      <TableRow
+                        key={row.id}
+                        className={
+                          row.score !== null && row.score < campaign.min_score ? 'opacity-45' : ''
+                        }
+                      >
                         <TableCell>
                           <Link href={`/leads/${row.lead_id}`} className="font-medium hover:underline">
                             {row.full_name || row.email}
@@ -196,7 +197,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4 space-y-8">
-          <CampaignForm campaign={campaign} />
+          <CampaignForm campaign={campaign} searches={searches} />
           <Card className="border-destructive/40">
             <CardHeader>
               <CardTitle className="text-destructive text-base">Danger zone</CardTitle>

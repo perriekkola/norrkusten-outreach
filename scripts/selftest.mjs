@@ -44,10 +44,10 @@ for (const statement of schemaStatements()) {
 /* ---------------------------------------------------------------- fixtures */
 
 await db.exec(`
-  insert into campaigns (id, name, icp, offer, steps)
-  values (1, 'Test', 'Maskinbyggare', 'Kurser',
+  insert into campaigns (id, name, icp, offer, min_score, steps)
+  values (1, 'Test', 'Maskinbyggare', 'Kurser', 50,
           '[{"delay_days":0,"goal":"intro"},{"delay_days":3,"goal":"bump"}]'),
-         (2, 'Other', 'Entreprenad', 'Kurser', '[{"delay_days":0,"goal":"intro"}]');
+         (2, 'Other', 'Entreprenad', 'Kurser', 50, '[{"delay_days":0,"goal":"intro"}]');
   insert into leads (id, email, full_name) values (1, 'a@b.se', 'A B'), (2, 'c@d.se', 'C D');
   insert into enrollments (id, campaign_id, lead_id, score, verdict)
   values (1, 1, 1, 90, 'strong'), (2, 2, 1, 20, 'weak');
@@ -129,11 +129,28 @@ assert.equal(
   'force re-runs everything selected',
 )
 
+// Sending walks the score order and never touches anyone below the campaign floor.
+await db.exec(`
+  insert into leads (id, email, full_name) values (3, 'e@f.se', 'E F'), (4, 'g@h.se', 'G H');
+  insert into enrollments (id, campaign_id, lead_id, score, next_send_at)
+  values (3, 1, 3, 95, now() - interval '1 hour'),
+         (4, 1, 4, 10, now() - interval '1 hour');
+  update enrollments set next_send_at = now() - interval '1 hour', score = 60 where id = 1;
+`)
+assert.deepEqual(
+  await q(`select e.id from enrollments e join campaigns c on c.id = e.campaign_id
+            where e.status = 'active' and c.status = 'active' and e.next_send_at <= now()
+              and e.score >= c.min_score
+            order by e.score desc, e.next_send_at`),
+  [{ id: 3 }, { id: 1 }],
+  'due list is best-first and excludes the below-floor lead',
+)
+
 const [funnel] = await q(`
   select (select count(*) from leads)::int as leads,
          (select count(*) from messages where status = 'sent')::int as sent,
          (select count(distinct lead_id) from enrollments)::int as enrolled`)
-assert.deepEqual(funnel, { leads: 2, sent: 1, enrolled: 1 }, 'funnel aggregate')
+assert.deepEqual(funnel, { leads: 4, sent: 1, enrolled: 3 }, 'funnel aggregate')
 
 assert.equal(
   (await q(`select id from enrollments where campaign_id = $1 and score is null`, [1])).length,
@@ -149,10 +166,11 @@ const filtered = await q(
 )
 assert.equal(filtered.length, 1, 'lead search filter')
 
+const allEnrollments = (await q(`select id from enrollments`)).length
 assert.equal(
   (await q(`select id from enrollments
              where ($1::int is null or campaign_id = $1::int)`, [null])).length,
-  2,
+  allEnrollments,
   'optional campaign filter: null means every campaign',
 )
 assert.equal(
