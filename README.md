@@ -16,9 +16,9 @@ Apify search  →  leads  →  Claude qualify + research  →  campaign  →  ou
 |---|---|
 | **Searches** | Runs the `code_crafter/leads-finder` Apify actor with your filters. Results import automatically. |
 | **Leads** | The raw pool. Filter by source search, research a company via Claude's web search, enroll into a campaign. |
-| **Campaigns** | The workspace. Each campaign carries its own ICP, offer and sequence. Enrolled leads are scored against *that* campaign's ICP, so one lead can be strong here and weak elsewhere. Claude writes each email from the offer, the research, the campaign angle and the thread so far. |
+| **Campaigns** | The workspace. A campaign names the searches it pulls leads from, its own ICP, a score floor, the offer and the sequence. **Run now** does the whole chain in one pass — enrol, score against *this* campaign's ICP, research only what clears the floor, draft what is due, best-scoring first. Safe to repeat; every stage skips work already done. |
 | **Outbox** | Every draft waits for approval (unless the campaign has auto-send on). Edit, approve, send now or discard. |
-| **Analytics** | Funnel, 30-day activity, per-campaign open and reply rates. |
+| **Analytics** | Funnel, activity over any date range, per-campaign open and reply rates. Filter by campaign and by date. |
 | **Settings** | Your ICP text, sender name, admin users, and which env vars are set. |
 
 A cron (`/api/cron`) imports finished searches, checks IMAP for replies, drafts what is due and
@@ -74,9 +74,12 @@ npm run dev
 Open `/login`. With no users in the database the form creates the admin account — the
 first email and password you enter become the login. Add more people later under Settings.
 
-Targeting lives on the campaign, not globally: create a campaign, write its ICP, enroll a
-search's leads into it, then press **Score unscored**. Scoring does nothing until that
-campaign has an ICP.
+Targeting lives on the campaign, not globally: create a campaign, tick the searches it should
+pull from, write its ICP and set a score floor. Then press **Run now** — or leave it to the
+cron. Nothing happens until the campaign has an ICP.
+
+Research runs only on leads that clear the floor. Scoring never uses it; only drafting does,
+so researching everyone would mean paying for briefs on leads you will never contact.
 
 ### 4. Deploy
 

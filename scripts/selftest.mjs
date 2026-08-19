@@ -146,6 +146,36 @@ assert.deepEqual(
   'due list is best-first and excludes the below-floor lead',
 )
 
+// Analytics date range: `to` is inclusive, so the bound is `< to + 1 day`.
+await db.exec(`update messages set sent_at = date '2026-03-10' + interval '20 hours' where id = 1`)
+assert.equal(
+  (await q(
+    `select id from messages
+      where ($1 = '' or sent_at >= $1::date) and ($2 = '' or sent_at < $2::date)`,
+    ['2026-03-10', '2026-03-11'],
+  )).length,
+  1,
+  'a message late on the end date is inside the range',
+)
+assert.equal(
+  (await q(
+    `select id from messages
+      where ($1 = '' or sent_at >= $1::date) and ($2 = '' or sent_at < $2::date)`,
+    ['2026-03-11', '2026-03-12'],
+  )).length,
+  0,
+  'and outside a later range',
+)
+assert.equal(
+  (await q(
+    `select to_char(d::date, 'YYYY-MM-DD') as day from generate_series(
+        coalesce($1::date, current_date - 29), coalesce($2::date, current_date), interval '1 day') d`,
+    ['2026-03-01', '2026-03-07'],
+  )).length,
+  7,
+  'activity series spans the chosen range inclusively',
+)
+
 const [funnel] = await q(`
   select (select count(*) from leads)::int as leads,
          (select count(*) from messages where status = 'sent')::int as sent,
