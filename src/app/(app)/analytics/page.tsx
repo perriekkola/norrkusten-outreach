@@ -133,13 +133,13 @@ export default async function AnalyticsPage() {
         </Card>
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-6 pb-0">
         <CardHeader>
           <CardTitle className="text-base">By campaign</CardTitle>
         </CardHeader>
-        <CardContent className="px-0">
+        <CardContent className="p-0">
           {campaigns.length === 0 ? (
-            <p className="text-muted-foreground px-6 text-sm">No campaigns yet.</p>
+            <p className="text-muted-foreground p-6 pt-0 text-sm">No campaigns yet.</p>
           ) : (
             <Table>
               <TableHeader>

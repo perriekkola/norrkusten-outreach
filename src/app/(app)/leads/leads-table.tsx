@@ -135,8 +135,8 @@ export function LeadsTable({
         timeout. Scoring happens inside a campaign, against that campaign&apos;s own profile.
       </p>
 
-      <Card>
-        <CardContent className="px-0">
+      <Card className="py-0">
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>

@@ -44,13 +44,13 @@ export default async function SearchesPage() {
       </PageHeader>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <Card>
+        <Card className="pb-0">
           <CardHeader>
             <CardTitle className="text-base">History</CardTitle>
           </CardHeader>
-          <CardContent className="px-0">
+          <CardContent className="p-0">
             {searches.length === 0 ? (
-              <p className="text-muted-foreground px-6 text-sm">No searches yet.</p>
+              <p className="text-muted-foreground p-6 pt-0 text-sm">No searches yet.</p>
             ) : (
               <Table>
                 <TableHeader>

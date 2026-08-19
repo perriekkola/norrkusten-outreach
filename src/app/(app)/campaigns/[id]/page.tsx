@@ -114,10 +114,10 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         </TabsList>
 
         <TabsContent value="leads" className="mt-4">
-          <Card>
-            <CardContent className="px-0">
+          <Card className="py-0">
+            <CardContent className="p-0">
               {enrollments.length === 0 ? (
-                <p className="text-muted-foreground px-6 py-8 text-center text-sm">
+                <p className="text-muted-foreground p-8 text-center text-sm">
                   Nobody enrolled yet — filter by source search on the{' '}
                   <Link href="/leads" className="text-primary underline">
                     Leads
