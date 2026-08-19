@@ -57,7 +57,7 @@ export function DraftCard({ message }: { message: OutboxRow }) {
               <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
                 Done
               </Button>
-              {state.ok ? <span className="self-center text-xs text-green-600">{state.ok}</span> : null}
+              {state.ok ? <span className="self-center text-xs text-green-600 dark:text-green-400">{state.ok}</span> : null}
             </div>
           </form>
         ) : (

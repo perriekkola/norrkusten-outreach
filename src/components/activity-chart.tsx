@@ -1,9 +1,10 @@
 export type ActivityPoint = { day: string; sent: number; opened: number; replied: number }
 
+// Colors come from the shadcn theme vars, which carry their own light and dark steps.
 const SERIES = [
-  { key: 'sent', label: 'Sent', color: '#2a78d6' },
-  { key: 'opened', label: 'Opened', color: '#eb6834' },
-  { key: 'replied', label: 'Replied', color: '#1baf7a' },
+  { key: 'sent', label: 'Sent', color: 'var(--chart-1)' },
+  { key: 'opened', label: 'Opened', color: 'var(--chart-2)' },
+  { key: 'replied', label: 'Replied', color: 'var(--chart-3)' },
 ] as const
 
 const W = 720
@@ -45,10 +46,10 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
               x2={W - PAD.right}
               y1={y(tick)}
               y2={y(tick)}
-              stroke="#e1e0d9"
+              stroke="var(--border)"
               strokeWidth={1}
             />
-            <text x={PAD.left - 8} y={y(tick) + 4} textAnchor="end" fontSize={10} fill="#898781">
+            <text x={PAD.left - 8} y={y(tick) + 4} textAnchor="end" fontSize={10} fill="var(--muted-foreground)">
               {tick}
             </text>
           </g>
@@ -90,7 +91,7 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
         ))}
 
         {[0, Math.floor(data.length / 2), data.length - 1].map((i) => (
-          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="#898781">
+          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--muted-foreground)">
             {label(data[i].day)}
           </text>
         ))}

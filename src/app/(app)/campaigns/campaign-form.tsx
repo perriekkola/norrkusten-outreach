@@ -119,7 +119,7 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       </div>
 
       {state.error ? <p className="text-destructive text-sm">{state.error}</p> : null}
-      {state.ok ? <p className="text-sm text-green-600">{state.ok}</p> : null}
+      {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
 
       <Button type="submit" disabled={pending}>
         {pending ? 'Saving…' : campaign ? 'Save changes' : 'Create campaign'}

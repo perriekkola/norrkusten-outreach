@@ -137,4 +137,5 @@ whose SQL is easiest to get wrong, plus the tracking-token and HTML-escaping che
   cap (40 qualify / 15 research). Move to a queue if you routinely process thousands.
 - No unsubscribe link. Add one before sending at volume — it is required for marketing email
   to consumers under GDPR/ePrivacy, and good practice for B2B.
-- Light theme only.
+- Theme: light / dark / system, switched from the header and remembered per browser.
+  The login screen has no switcher and follows the OS.

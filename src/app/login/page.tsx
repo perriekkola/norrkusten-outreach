@@ -1,5 +1,5 @@
-import Image from 'next/image'
 import { redirect } from 'next/navigation'
+import { Logo } from '@/components/logo'
 import { currentUser, userCount } from '@/lib/auth'
 import { LoginForm } from './login-form'
 
@@ -19,7 +19,7 @@ export default async function LoginPage() {
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-8">
-        <Image src="/logo.svg" alt="Norrkusten" width={166} height={40} priority />
+        <Logo className="h-9 w-auto" />
         {dbError ? (
           <div className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-4 text-sm">
             <p className="font-medium">Temporarily unavailable</p>

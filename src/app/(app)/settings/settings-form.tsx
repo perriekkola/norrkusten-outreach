@@ -30,7 +30,7 @@ export function SettingsForm({ icp, senderName }: { icp: string; senderName: str
         <Label htmlFor="sender_name">Default sender name</Label>
         <Input id="sender_name" name="sender_name" defaultValue={senderName} />
       </div>
-      {state.ok ? <p className="text-sm text-green-600">{state.ok}</p> : null}
+      {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
       <Button type="submit" disabled={pending}>
         {pending ? 'Saving…' : 'Save'}
       </Button>
@@ -61,7 +61,7 @@ export function UserForm() {
         {pending ? '…' : 'Add'}
       </Button>
       {state.error ? <p className="text-destructive w-full text-sm">{state.error}</p> : null}
-      {state.ok ? <p className="w-full text-sm text-green-600">{state.ok}</p> : null}
+      {state.ok ? <p className="w-full text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
     </form>
   )
 }
