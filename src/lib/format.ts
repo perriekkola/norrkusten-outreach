@@ -1,3 +1,16 @@
+/**
+ * Structured output from the Opus family sometimes comes back doubly escaped, so
+ * JSON.parse yields "Fr\\u00e5n" as six literal characters rather than "Från".
+ * Decoding per code unit is correct for surrogate pairs too: JS strings are UTF-16,
+ * so the two halves concatenate back into one character.
+ */
+export function decodeEscapes(text: string): string {
+  if (!/\\u[0-9a-fA-F]{4}/.test(text)) return text
+  return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  )
+}
+
 /** The signature is configuration, not something to regenerate per email. */
 export function withSignature(body: string, signature: string) {
   const trimmed = signature.trim()

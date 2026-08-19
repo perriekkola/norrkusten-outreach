@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import type { Campaign, Lead } from './db'
+import { decodeEscapes } from './format'
 
 /**
  * One model per task, overridable without a deploy. Research dominates the bill —
@@ -131,7 +132,8 @@ export async function qualifyLead(lead: Lead, icp: string): Promise<Qualificatio
   })
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no qualification')
-  return message.parsed_output
+  const { reasons, angle, ...rest } = message.parsed_output
+  return { ...rest, reasons: decodeEscapes(reasons), angle: decodeEscapes(angle) }
 }
 
 /* ----------------------------------------------------------------- research */
@@ -167,7 +169,7 @@ export async function researchCompany(lead: Lead): Promise<string> {
       messages,
     })
     guardRefusal(message)
-    if (message.stop_reason !== 'pause_turn') return finalText(message.content)
+    if (message.stop_reason !== 'pause_turn') return decodeEscapes(finalText(message.content))
     messages.push({ role: 'assistant', content: message.content })
   }
   throw new Error('Research did not finish — try again')
@@ -259,7 +261,10 @@ export async function draftEmail(args: {
   })
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no draft')
-  return message.parsed_output
+  return {
+    subject: decodeEscapes(message.parsed_output.subject),
+    body: decodeEscapes(message.parsed_output.body),
+  }
 }
 
 /* ----------------------------------------------------------------- campaign */
@@ -433,5 +438,14 @@ export async function draftCampaign(args: {
   })
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no campaign draft')
-  return { ...message.parsed_output, links: args.links }
+  const draft = message.parsed_output
+  return {
+    ...draft,
+    name: decodeEscapes(draft.name),
+    icp: decodeEscapes(draft.icp),
+    offer: decodeEscapes(draft.offer),
+    guidelines: decodeEscapes(draft.guidelines),
+    steps: draft.steps.map((step) => ({ ...step, goal: decodeEscapes(step.goal) })),
+    links: args.links,
+  }
 }

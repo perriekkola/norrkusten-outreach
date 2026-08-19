@@ -39,7 +39,10 @@ const SELECT = `
 
 export default async function OutboxPage() {
   const pending = (await db().query(
-    `${SELECT} where m.status in ('draft','approved') order by m.created_at limit 200`,
+    // Same order the sender uses, so the queue reads as the order it will go out —
+    // and a rewritten draft keeps its place instead of jumping to the bottom.
+    `${SELECT} where m.status in ('draft','approved')
+      order by e.score desc nulls last, m.step, m.id limit 200`,
   )) as OutboxRow[]
 
   const testEmail = await getSetting('test_email')

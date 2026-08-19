@@ -24,7 +24,16 @@ assert.equal((html.match(/<p /g) ?? []).length, 2, 'blank line splits paragraphs
 assert.ok(!textToHtml('x').includes('<img'), 'no pixel without a URL')
 assert.ok(textToHtml('x', 'https://e.test/t/1-a').includes('<img'), 'pixel when URL given')
 
-const { withSignature } = await import('../src/lib/format.ts')
+const { withSignature, decodeEscapes } = await import('../src/lib/format.ts')
+assert.equal(
+  decodeEscapes('Fr\\u00e5n 2027 till\\u00e4mpas'),
+  'Från 2027 tillämpas',
+  'doubly-escaped unicode is decoded',
+)
+assert.equal(decodeEscapes('Från 2027'), 'Från 2027', 'clean text is untouched')
+assert.equal(decodeEscapes('C:\\path\\to'), 'C:\\path\\to', 'ordinary backslashes survive')
+assert.equal(decodeEscapes('\\ud83d\\ude00'), '😀', 'surrogate pairs rejoin')
+
 assert.equal(withSignature('Hej.', 'Rickard'), 'Hej.\n\nRickard', 'signature follows a blank line')
 assert.equal(withSignature('Hej.\n\n', 'Rickard'), 'Hej.\n\nRickard', 'trailing space is not doubled')
 assert.equal(withSignature('Hej.', '   '), 'Hej.', 'a blank signature adds nothing')
