@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deleteLeads, enrollLeads, researchLeads, setLeadStatus } from '@/lib/actions'
+import { deleteLeads, enrollLeads, setLeadStatus } from '@/lib/actions'
 import type { Campaign, Lead } from '@/lib/db'
 
 export function LeadsTable({
@@ -65,14 +65,6 @@ export function LeadsTable({
         <span className="text-muted-foreground px-2 text-sm">
           {selected.length ? `${selected.length} selected` : 'Select leads to act on them'}
         </span>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!selected.length || !!busy}
-          onClick={() => run('research', researchLeads)}
-        >
-          {busy === 'research' ? 'Researching…' : 'Research company'}
-        </Button>
         {/* Action menus, not form inputs — a <select> that fires on change is the wrong control. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -130,12 +122,6 @@ export function LeadsTable({
         </Button>
       </div>
 
-      <p className="text-muted-foreground -mt-2 px-2 text-xs">
-        Research runs on up to 15 unresearched leads per click, so click again to continue
-        through a bigger selection — it never re-researches a company. Scoring happens inside a
-        campaign, against that campaign&apos;s own profile.
-      </p>
-
       <Card className="py-0">
         <CardContent className="p-0">
           <Table>
@@ -151,7 +137,6 @@ export function LeadsTable({
                 </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead className="w-24">Researched</TableHead>
                 <TableHead className="w-24">Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -177,13 +162,6 @@ export function LeadsTable({
                     <div className="text-muted-foreground text-xs">
                       {[lead.industry, lead.company_size].filter(Boolean).join(' · ') || '—'}
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    {lead.research ? (
-                      <Badge variant="secondary">yes</Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">—</span>
-                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">

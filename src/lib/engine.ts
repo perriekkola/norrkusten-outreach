@@ -105,6 +105,17 @@ export async function draftForEnrollment(enrollmentId: number): Promise<number |
     body: string
   }[]
 
+  // Research is an input to writing, not a step of its own: fetch it the first time we
+  // write to this company and reuse it for every later email and every other campaign.
+  if (!lead.research) {
+    try {
+      lead.research = await researchCompany(lead)
+      await db()`update leads set research = ${lead.research} where id = ${lead.id}`
+    } catch (error) {
+      console.error('research failed, drafting without it', lead.id, error)
+    }
+  }
+
   const senderName = campaign.from_name || 'Norrkusten'
   const draft = await draftEmail({
     lead,
@@ -177,7 +188,6 @@ export async function sendMessage(messageId: number) {
 
 const ENROL_LIMIT = 500
 const SCORE_LIMIT = 40
-const RESEARCH_LIMIT = 15
 
 /** Bounded concurrency; every stage below has to fit one function invocation. */
 async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
@@ -204,7 +214,7 @@ async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise
  */
 export async function runCampaign(campaignId: number) {
   const [campaign] = (await db()`select * from campaigns where id = ${campaignId}`) as Campaign[]
-  if (!campaign) return { enrolled: 0, scored: 0, researched: 0, drafted: 0 }
+  if (!campaign) return { enrolled: 0, scored: 0, drafted: 0 }
 
   // 1. Enrol anything from the source searches that is not already in.
   let enrolled = 0
@@ -241,23 +251,7 @@ export async function runCampaign(campaignId: number) {
     })
   }
 
-  // 3. Research only what clears the floor — nothing else ever gets an email.
-  const toResearch = (await db()`
-    select distinct l.id from enrollments e join leads l on l.id = e.lead_id
-     where e.campaign_id = ${campaignId} and e.score >= ${campaign.min_score}::int
-       and l.research is null
-     order by l.id limit ${RESEARCH_LIMIT}`) as { id: number }[]
-
-  let researched = 0
-  await mapLimit(toResearch, 3, async (row) => {
-    const [lead] = (await db()`select * from leads where id = ${row.id}`) as Lead[]
-    if (!lead) return
-    const brief = await researchCompany(lead)
-    await db()`update leads set research = ${brief} where id = ${row.id}`
-    researched++
-  })
-
-  // 4. Draft what is due, best-scoring first.
+  // 3. Draft what is due, best-scoring first. Drafting researches as it goes.
   const due = (await db()`
     select id from enrollments
      where campaign_id = ${campaignId} and status = 'active'
@@ -269,7 +263,7 @@ export async function runCampaign(campaignId: number) {
     if (await draftForEnrollment(row.id)) drafted++
   })
 
-  return { enrolled, scored, researched, drafted }
+  return { enrolled, scored, drafted }
 }
 
 /** One pass: draft what is due, send what is approved. */

@@ -3,9 +3,15 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/page-header'
 import { SubmitButton } from '@/components/submit-button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { researchLeads, setLeadStatus, unenroll } from '@/lib/actions'
+import { setLeadStatus, unenroll } from '@/lib/actions'
 import { db, type Lead, type Message } from '@/lib/db'
 
 type Enrollment = {
@@ -50,13 +56,6 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
         title={lead.full_name || lead.email}
         description={[lead.job_title, lead.company_name].filter(Boolean).join(' · ')}
       >
-        <form action={researchLeads}>
-          <input type="hidden" name="leadId" value={lead.id} />
-          <input type="hidden" name="force" value="1" />
-          <SubmitButton size="sm" variant="outline" pendingLabel="Researching…">
-            {lead.research ? 'Research again' : 'Research'}
-          </SubmitButton>
-        </form>
         <form action={setLeadStatus}>
           <input type="hidden" name="leadId" value={lead.id} />
           <input type="hidden" name="status" value="replied" />
@@ -105,6 +104,9 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Company research</CardTitle>
+                <CardDescription>
+                  Gathered automatically the first time we wrote to this company.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap">{lead.research}</p>

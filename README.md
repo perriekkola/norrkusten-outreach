@@ -15,8 +15,8 @@ Apify search  →  leads  →  Claude qualify + research  →  campaign  →  ou
 | Page | What it does |
 |---|---|
 | **Searches** | Runs the `code_crafter/leads-finder` Apify actor with your filters. Results import automatically. |
-| **Leads** | The raw pool. Filter by source search, research a company via Claude's web search, enroll into a campaign. |
-| **Campaigns** | The workspace. A campaign names the searches it pulls leads from, its own ICP, a score floor, the offer and the sequence. **Run now** does the whole chain in one pass — enrol, score against *this* campaign's ICP, research only what clears the floor, draft what is due, best-scoring first. Safe to repeat; every stage skips work already done. |
+| **Leads** | The raw pool. Filter by source search, enroll into a campaign, set status. |
+| **Campaigns** | The workspace. A campaign names the searches it pulls leads from, its own ICP, a score floor, the offer and the sequence. **Run now** does the whole chain in one pass — enrol, score against *this* campaign's ICP, draft what is due, best-scoring first. Safe to repeat; every stage skips work already done. |
 | **Outbox** | Every draft waits for approval (unless the campaign has auto-send on). Edit, approve, send now or discard. |
 | **Analytics** | Funnel, activity over any date range, per-campaign open and reply rates. Filter by campaign and by date. |
 | **Settings** | Your ICP text, sender name, admin users, and which env vars are set. |
@@ -78,8 +78,10 @@ Targeting lives on the campaign, not globally: create a campaign, tick the searc
 pull from, write its ICP and set a score floor. Then press **Run now** — or leave it to the
 cron. Nothing happens until the campaign has an ICP.
 
-Research runs only on leads that clear the floor. Scoring never uses it; only drafting does,
-so researching everyone would mean paying for briefs on leads you will never contact.
+Company research is not a step you run. The first time an email is written to a company,
+Claude web-searches it and stores the brief on the lead; every later email — in that campaign
+or any other — reuses it. If the search fails, the email is still written, just from the
+scraped data alone.
 
 ### 4. Deploy
 

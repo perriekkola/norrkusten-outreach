@@ -106,27 +106,12 @@ assert.deepEqual(
   'a lead holds a different score per campaign',
 )
 
-// Research skips what is done unless forced, so repeat clicks walk forward.
-await db.exec(`update leads set research = 'done' where id = 1`)
+// Research is fetched once per company and reused; drafting only fetches when absent.
+await db.exec(`update leads set research = 'brief' where id = 1`)
 assert.deepEqual(
-  await q(
-    `select id from leads
-      where id = any($1::int[]) and ($2::boolean or research is null)
-      order by id limit 15`,
-    [[1, 2], false],
-  ),
+  await q(`select id from leads where research is null order by id`),
   [{ id: 2 }],
-  'unforced research skips the already-researched lead',
-)
-assert.equal(
-  (await q(
-    `select id from leads
-      where id = any($1::int[]) and ($2::boolean or research is null)
-      order by id limit 15`,
-    [[1, 2], true],
-  )).length,
-  2,
-  'force re-runs everything selected',
+  'only the unresearched lead would trigger a fetch',
 )
 
 // Sending walks the score order and never touches anyone below the campaign floor.
