@@ -38,6 +38,19 @@ function textOf(content: Anthropic.ContentBlock[]) {
     .trim()
 }
 
+/**
+ * A server-tool turn interleaves the model's narration ("I'll search for…") with the
+ * tool blocks, so joining every text block drags that preamble into the result.
+ * Only the text after the last tool block is the actual answer.
+ */
+function finalText(content: Anthropic.ContentBlock[]) {
+  let lastTool = -1
+  content.forEach((block, index) => {
+    if (block.type.includes('tool')) lastTool = index
+  })
+  return textOf(content.slice(lastTool + 1)) || textOf(content)
+}
+
 function guardRefusal(message: { stop_reason: string | null }) {
   if (message.stop_reason === 'refusal') {
     throw new Error('Claude declined this request. Rephrase the ICP or offer and try again.')
@@ -100,10 +113,13 @@ export async function researchCompany(lead: Lead): Promise<string> {
       role: 'user',
       content:
         `Research this company for a cold outreach email. Search the web.\n\n${leadContext(lead)}\n\n` +
-        'Return a short brief (max 200 words) with: what they do, recent news or hiring signals ' +
-        'from the last 12 months, anything suggesting a need for staff training or upskilling, ' +
-        'and one concrete, specific detail worth referencing in a first email. ' +
-        'If the web results are thin, say so plainly instead of guessing.',
+        'Return a short brief of at most 200 words covering: what they do, recent news or ' +
+        'hiring signals from the last 12 months, anything suggesting a need for staff training ' +
+        'or upskilling, and one concrete, specific detail worth referencing in a first email. ' +
+        'If the web results are thin, say so plainly instead of guessing.\n\n' +
+        'Write plain prose only. No markdown, no headings, no bold, no bullet lists, no title, ' +
+        'and no preamble about what you are about to do — this text is pasted straight into ' +
+        'another prompt, so start with the first fact.',
     },
   ]
 
@@ -121,7 +137,7 @@ export async function researchCompany(lead: Lead): Promise<string> {
       messages,
     })
     guardRefusal(message)
-    if (message.stop_reason !== 'pause_turn') return textOf(message.content)
+    if (message.stop_reason !== 'pause_turn') return finalText(message.content)
     messages.push({ role: 'assistant', content: message.content })
   }
   throw new Error('Research did not finish — try again')
