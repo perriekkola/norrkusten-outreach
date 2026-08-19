@@ -19,7 +19,6 @@ const KEYS = [
 ] as const
 
 export default async function SettingsPage() {
-  const icp = await getSetting('icp')
   const senderName = await getSetting('sender_name')
   const users = (await db()`select id, email, created_at from users order by created_at`) as {
     id: number
@@ -34,14 +33,14 @@ export default async function SettingsPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Ideal customer profile</CardTitle>
+            <CardTitle className="text-base">Sending identity</CardTitle>
             <CardDescription>
-              Claude scores every lead against this text. Be specific about who buys, what they
-              struggle with and what you sell.
+              Who signs the emails. Each campaign carries its own targeting profile — set that on
+              the campaign itself.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SettingsForm icp={icp} senderName={senderName} />
+            <SettingsForm senderName={senderName} />
           </CardContent>
         </Card>
 

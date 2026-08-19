@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/submit-button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { qualifyLeads, researchLeads, setLeadStatus, unenroll } from '@/lib/actions'
+import { researchLeads, setLeadStatus, unenroll } from '@/lib/actions'
 import { db, type Lead, type Message } from '@/lib/db'
 
 type Enrollment = {
@@ -13,6 +13,10 @@ type Enrollment = {
   step: number
   status: string
   next_send_at: string
+  score: number | null
+  verdict: string | null
+  reasons: string | null
+  angle: string | null
   campaign_id: number
   campaign_name: string
 }
@@ -32,7 +36,8 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
   if (!lead) notFound()
 
   const enrollments = (await db()`
-    select e.id, e.step, e.status, e.next_send_at, c.id as campaign_id, c.name as campaign_name
+    select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons, e.angle,
+           c.id as campaign_id, c.name as campaign_name
       from enrollments e join campaigns c on c.id = e.campaign_id
      where e.lead_id = ${lead.id} order by e.created_at desc`) as Enrollment[]
 
@@ -45,12 +50,6 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
         title={lead.full_name || lead.email}
         description={[lead.job_title, lead.company_name].filter(Boolean).join(' · ')}
       >
-        <form action={qualifyLeads}>
-          <input type="hidden" name="leadId" value={lead.id} />
-          <SubmitButton size="sm" variant="outline" pendingLabel="Qualifying…">
-            Qualify
-          </SubmitButton>
-        </form>
         <form action={researchLeads}>
           <input type="hidden" name="leadId" value={lead.id} />
           <SubmitButton size="sm" variant="outline" pendingLabel="Researching…">
@@ -68,21 +67,35 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
-          {lead.score !== null ? (
+          {enrollments.some((e) => e.score !== null) ? (
             <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <CardTitle className="text-base">Qualification</CardTitle>
-                <Badge className="capitalize">
-                  {lead.verdict} · {lead.score}
-                </Badge>
+              <CardHeader>
+                <CardTitle className="text-base">Fit per campaign</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <p>{lead.reasons}</p>
-                <Separator />
-                <p>
-                  <span className="text-muted-foreground">Angle: </span>
-                  {lead.angle}
-                </p>
+              <CardContent className="space-y-4">
+                {enrollments
+                  .filter((enrollment) => enrollment.score !== null)
+                  .map((enrollment) => (
+                    <div key={enrollment.id} className="rounded-lg border p-4">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <Link
+                          href={`/campaigns/${enrollment.campaign_id}`}
+                          className="text-sm font-medium hover:underline"
+                        >
+                          {enrollment.campaign_name}
+                        </Link>
+                        <Badge className="capitalize">
+                          {enrollment.verdict} · {enrollment.score}
+                        </Badge>
+                      </div>
+                      <p className="text-muted-foreground text-sm">{enrollment.reasons}</p>
+                      <Separator className="my-3" />
+                      <p className="text-sm">
+                        <span className="text-muted-foreground">Angle: </span>
+                        {enrollment.angle}
+                      </p>
+                    </div>
+                  ))}
               </CardContent>
             </Card>
           ) : null}
@@ -189,8 +202,8 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
                         {enrollment.campaign_name}
                       </Link>
                       <div className="text-muted-foreground text-xs">
-                        step {enrollment.step + 1} · {enrollment.status} · next{' '}
-                        {new Date(enrollment.next_send_at).toLocaleDateString('sv-SE')}
+                        {enrollment.score !== null ? `score ${enrollment.score} · ` : ''}
+                        step {enrollment.step + 1} · {enrollment.status}
                       </div>
                     </div>
                     <form action={unenroll}>

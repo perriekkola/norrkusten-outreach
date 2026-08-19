@@ -30,6 +30,12 @@ assert.equal(readTrackToken('nonsense'), null, 'garbage rejected')
 
 /* ------------------------------------------------------------------ schema */
 
+// A trailing `--` comment may contain a semicolon; the splitter must not cut there.
+assert.ok(
+  schemaStatements().some((st) => st.includes('research') && st.includes('create table')),
+  'leads table survives inline comments containing semicolons',
+)
+
 const db = new PGlite()
 for (const statement of schemaStatements()) {
   await db.exec(statement)
@@ -38,10 +44,13 @@ for (const statement of schemaStatements()) {
 /* ---------------------------------------------------------------- fixtures */
 
 await db.exec(`
-  insert into campaigns (id, name, offer, steps)
-  values (1, 'Test', 'Kurser', '[{"delay_days":0,"goal":"intro"},{"delay_days":3,"goal":"bump"}]');
+  insert into campaigns (id, name, icp, offer, steps)
+  values (1, 'Test', 'Maskinbyggare', 'Kurser',
+          '[{"delay_days":0,"goal":"intro"},{"delay_days":3,"goal":"bump"}]'),
+         (2, 'Other', 'Entreprenad', 'Kurser', '[{"delay_days":0,"goal":"intro"}]');
   insert into leads (id, email, full_name) values (1, 'a@b.se', 'A B'), (2, 'c@d.se', 'C D');
-  insert into enrollments (id, campaign_id, lead_id) values (1, 1, 1);
+  insert into enrollments (id, campaign_id, lead_id, score, verdict)
+  values (1, 1, 1, 90, 'strong'), (2, 2, 1, 20, 'weak');
   insert into messages (id, enrollment_id, lead_id, step, subject, body, status, provider_id, sent_at)
   values (1, 1, 1, 0, 'Hej', 'Body', 'sent', '<abc@one.com>', now());
   select setval(pg_get_serial_sequence('messages','id'), 1);
@@ -84,11 +93,30 @@ assert.equal(
   '30-day activity series',
 )
 
+// The whole point of moving scoring onto enrollments: one lead, two verdicts.
+const perCampaign = await q(
+  `select campaign_id, score from enrollments where lead_id = 1 order by campaign_id`,
+)
+assert.deepEqual(
+  perCampaign,
+  [
+    { campaign_id: 1, score: 90 },
+    { campaign_id: 2, score: 20 },
+  ],
+  'a lead holds a different score per campaign',
+)
+
 const [funnel] = await q(`
   select (select count(*) from leads)::int as leads,
          (select count(*) from messages where status = 'sent')::int as sent,
          (select count(distinct lead_id) from enrollments)::int as enrolled`)
 assert.deepEqual(funnel, { leads: 2, sent: 1, enrolled: 1 }, 'funnel aggregate')
+
+assert.equal(
+  (await q(`select id from enrollments where campaign_id = $1 and score is null`, [1])).length,
+  0,
+  'unscored lookup used by the campaign page',
+)
 
 const filtered = await q(
   `select * from leads
@@ -101,8 +129,14 @@ assert.equal(filtered.length, 1, 'lead search filter')
 assert.equal(
   (await q(`select id from enrollments
              where ($1::int is null or campaign_id = $1::int)`, [null])).length,
+  2,
+  'optional campaign filter: null means every campaign',
+)
+assert.equal(
+  (await q(`select id from enrollments
+             where ($1::int is null or campaign_id = $1::int)`, [2])).length,
   1,
-  'optional campaign filter',
+  'optional campaign filter: narrows to one campaign',
 )
 
 await db.close()

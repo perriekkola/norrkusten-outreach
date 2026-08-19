@@ -71,12 +71,13 @@ export async function ingestSearches() {
 /** Create the draft for one enrollment's current step. Returns the message id. */
 export async function draftForEnrollment(enrollmentId: number): Promise<number | null> {
   const rows = (await db()`
-    select e.step, e.lead_id, c.id as campaign_id, c.name, c.offer, c.language, c.from_name,
-           c.auto_send, c.steps, c.status, c.created_at
+    select e.step, e.lead_id, e.angle, c.id as campaign_id, c.name, c.icp, c.offer, c.language,
+           c.from_name, c.auto_send, c.steps, c.status, c.created_at
       from enrollments e join campaigns c on c.id = e.campaign_id
      where e.id = ${enrollmentId}`) as (Omit<Campaign, 'id'> & {
     step: number
     lead_id: number
+    angle: string | null
     campaign_id: number
   })[]
   const row = rows[0]
@@ -105,7 +106,14 @@ export async function draftForEnrollment(enrollmentId: number): Promise<number |
   }[]
 
   const senderName = campaign.from_name || 'Norrkusten'
-  const draft = await draftEmail({ lead, campaign, step: row.step, senderName, previous })
+  const draft = await draftEmail({
+    lead,
+    campaign,
+    step: row.step,
+    senderName,
+    angle: row.angle,
+    previous,
+  })
 
   const [message] = (await db()`
     insert into messages (enrollment_id, lead_id, step, subject, body, status)
@@ -142,7 +150,7 @@ export async function sendMessage(messageId: number) {
     throw error
   }
 
-  await db()`update leads set status = 'contacted' where id = ${message.lead_id} and status in ('new','qualified')`
+  await db()`update leads set status = 'contacted' where id = ${message.lead_id} and status = 'new'`
 
   // Schedule the next step, or finish the enrollment.
   const [enrollment] = (await db()`

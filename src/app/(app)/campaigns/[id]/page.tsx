@@ -13,7 +13,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deleteCampaign, generateDrafts, setCampaignStatus, unenroll } from '@/lib/actions'
+import {
+  deleteCampaign,
+  dropWeak,
+  generateDrafts,
+  qualifyEnrollments,
+  setCampaignStatus,
+  unenroll,
+} from '@/lib/actions'
 import { db, type Campaign } from '@/lib/db'
 import { CampaignForm } from '../campaign-form'
 
@@ -22,6 +29,9 @@ type EnrollmentRow = {
   step: number
   status: string
   next_send_at: string
+  score: number | null
+  verdict: string | null
+  reasons: string | null
   lead_id: number
   full_name: string | null
   email: string
@@ -30,25 +40,54 @@ type EnrollmentRow = {
   opened: number
 }
 
+const VERDICT_COLOR: Record<string, string> = {
+  strong: 'bg-green-500/15 text-green-700 dark:text-green-400',
+  medium: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+  weak: 'bg-muted text-muted-foreground',
+}
+
 export default async function CampaignPage({ params }: PageProps<'/campaigns/[id]'>) {
   const { id } = await params
   const [campaign] = (await db()`select * from campaigns where id = ${Number(id)}`) as Campaign[]
   if (!campaign) notFound()
 
   const enrollments = (await db()`
-    select e.id, e.step, e.status, e.next_send_at, l.id as lead_id, l.full_name, l.email,
-           l.company_name,
+    select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons,
+           l.id as lead_id, l.full_name, l.email, l.company_name,
            (select count(*) from messages m
              where m.enrollment_id = e.id and m.status = 'sent')::int as sent,
            (select count(*) from messages m
              where m.enrollment_id = e.id and m.opened_at is not null)::int as opened
       from enrollments e join leads l on l.id = e.lead_id
      where e.campaign_id = ${campaign.id}
-     order by e.next_send_at limit 500`) as EnrollmentRow[]
+     order by e.score desc nulls last, e.next_send_at limit 500`) as EnrollmentRow[]
+
+  const unscored = enrollments.filter((row) => row.score === null).length
 
   return (
     <>
-      <PageHeader title={campaign.name} description={`${campaign.steps.length} steps`}>
+      <PageHeader
+        title={campaign.name}
+        description={`${campaign.steps.length} steps · ${unscored} unscored`}
+      >
+        <form action={qualifyEnrollments}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <SubmitButton
+            size="sm"
+            variant="outline"
+            pendingLabel="Scoring…"
+            disabled={!campaign.icp.trim() || unscored === 0}
+          >
+            Score unscored ({unscored})
+          </SubmitButton>
+        </form>
+        <form action={dropWeak}>
+          <input type="hidden" name="campaignId" value={campaign.id} />
+          <input type="hidden" name="floor" value="50" />
+          <SubmitButton size="sm" variant="ghost" pendingLabel="Removing…">
+            Drop below 50
+          </SubmitButton>
+        </form>
         <form action={generateDrafts}>
           <input type="hidden" name="campaignId" value={campaign.id} />
           <SubmitButton size="sm" variant="outline" pendingLabel="Drafting…">
@@ -79,7 +118,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
             <CardContent className="px-0">
               {enrollments.length === 0 ? (
                 <p className="text-muted-foreground px-6 py-8 text-center text-sm">
-                  Nobody enrolled yet — pick leads on the{' '}
+                  Nobody enrolled yet — filter by source search on the{' '}
                   <Link href="/leads" className="text-primary underline">
                     Leads
                   </Link>{' '}
@@ -90,6 +129,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                   <TableHeader>
                     <TableRow>
                       <TableHead>Lead</TableHead>
+                      <TableHead className="w-24 text-right">Score</TableHead>
                       <TableHead className="w-20">Step</TableHead>
                       <TableHead className="w-24">Sent</TableHead>
                       <TableHead className="w-24">Opened</TableHead>
@@ -108,6 +148,20 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                           <div className="text-muted-foreground text-xs">
                             {row.company_name ?? row.email}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {row.score === null ? (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          ) : (
+                            <span
+                              title={row.reasons ?? ''}
+                              className={`rounded px-2 py-0.5 text-sm font-medium tabular-nums ${
+                                VERDICT_COLOR[row.verdict ?? ''] ?? ''
+                              }`}
+                            >
+                              {row.score}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="tabular-nums">
                           {Math.min(row.step + 1, campaign.steps.length)}/{campaign.steps.length}

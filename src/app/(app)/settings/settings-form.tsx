@@ -4,28 +4,13 @@ import { useActionState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { addUser, saveSettings } from '@/lib/actions'
 
-export function SettingsForm({ icp, senderName }: { icp: string; senderName: string }) {
+export function SettingsForm({ senderName }: { senderName: string }) {
   const [state, action, pending] = useActionState(saveSettings, {})
 
   return (
     <form action={action} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="icp">Who we sell to</Label>
-        <Textarea
-          id="icp"
-          name="icp"
-          rows={12}
-          defaultValue={icp}
-          placeholder={
-            'We sell e-learning courses in … to Swedish companies with 50-500 employees.\n\n' +
-            'Best fit: HR managers, L&D leads and operations managers who own a training budget.\n\n' +
-            'Poor fit: students, consultants selling training themselves, companies under 20 people.'
-          }
-        />
-      </div>
       <div className="space-y-2">
         <Label htmlFor="sender_name">Default sender name</Label>
         <Input id="sender_name" name="sender_name" defaultValue={senderName} />

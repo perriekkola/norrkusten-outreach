@@ -21,7 +21,7 @@ async function stats(): Promise<Stats> {
   const [row] = (await db()`
     select
       (select count(*) from leads)::int                                            as leads,
-      (select count(*) from leads where status = 'qualified')::int                 as qualified,
+      (select count(distinct lead_id) from enrollments where score >= 50)::int      as qualified,
       (select count(*) from leads where status = 'contacted')::int                 as contacted,
       (select count(*) from leads where status = 'replied')::int                   as replied,
       (select count(*) from messages where status in ('draft','approved'))::int    as drafts,
@@ -35,7 +35,7 @@ async function stats(): Promise<Stats> {
 
 const TILES = [
   { key: 'leads', label: 'Leads', href: '/leads' },
-  { key: 'qualified', label: 'Qualified', href: '/leads?status=qualified' },
+  { key: 'qualified', label: 'Scored 50+', href: '/campaigns' },
   { key: 'contacted', label: 'Contacted', href: '/leads?status=contacted' },
   { key: 'replied', label: 'Replied', href: '/leads?status=replied' },
   { key: 'drafts', label: 'Waiting in outbox', href: '/outbox' },
@@ -105,9 +105,9 @@ export default async function DashboardPage() {
           },
           {
             title: '2. Qualify',
-            body: 'Claude scores each lead against your ICP and researches the company on the web.',
-            href: '/leads',
-            cta: 'Open leads',
+            body: 'Enroll a search into a campaign, then score those leads against that campaign\u2019s own profile.',
+            href: '/campaigns',
+            cta: 'Open campaigns',
           },
           {
             title: '3. Reach out',

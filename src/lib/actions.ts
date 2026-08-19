@@ -101,7 +101,6 @@ export async function addUser(_prev: State, formData: FormData): Promise<State> 
 
 export async function saveSettings(_prev: State, formData: FormData): Promise<State> {
   await requireUser()
-  await setSetting('icp', String(formData.get('icp') ?? ''))
   await setSetting('sender_name', String(formData.get('sender_name') ?? ''))
   refresh()
   return { ok: 'Saved.' }
@@ -121,11 +120,11 @@ export async function createSearch(_prev: State, formData: FormData): Promise<St
     contact_not_job_title: list(formData.get('contact_not_job_title')),
     seniority_level: formData.getAll('seniority_level').map(String),
     functional_level: formData.getAll('functional_level').map(String),
-    contact_location: list(formData.get('contact_location')),
+    contact_location: formData.getAll('contact_location').map(String),
     contact_city: list(formData.get('contact_city')),
     email_status: formData.getAll('email_status').map(String),
     size: formData.getAll('size').map(String),
-    company_industry: list(formData.get('company_industry')),
+    company_industry: formData.getAll('company_industry').map(String),
     company_keywords: list(formData.get('company_keywords')),
     company_not_keywords: list(formData.get('company_not_keywords')),
     min_revenue: String(formData.get('min_revenue') ?? '') || undefined,
@@ -174,29 +173,51 @@ export async function deleteSearch(formData: FormData) {
 
 /* -------------------------------------------------------------------- leads */
 
-async function icpText() {
-  const [row] = (await db()`select value from settings where key = 'icp'`) as { value: string }[]
-  return row?.value ?? ''
+/**
+ * Scores enrolled leads against their campaign's own ICP. Scoring is per pairing:
+ * the same lead can be strong for one campaign and weak for another.
+ */
+export async function qualifyEnrollments(formData: FormData) {
+  await requireUser()
+  const campaignId = Number(formData.get('campaignId'))
+  const [campaign] = (await db()`select icp from campaigns where id = ${campaignId}`) as {
+    icp: string
+  }[]
+  if (!campaign?.icp.trim()) return
+
+  const explicit = formData.getAll('enrollmentId').map(Number).filter(Number.isFinite)
+  const targets = explicit.length
+    ? explicit
+    : ((await db()`
+        select id from enrollments
+         where campaign_id = ${campaignId} and score is null
+         order by created_at limit ${QUALIFY_BATCH}`) as { id: number }[]).map((row) => row.id)
+
+  await mapLimit(targets.slice(0, QUALIFY_BATCH), 5, async (enrollmentId) => {
+    const [row] = (await db()`
+      select l.* from enrollments e join leads l on l.id = e.lead_id
+       where e.id = ${enrollmentId}`) as Lead[]
+    if (!row) return
+    const result = await qualifyLead(row, campaign.icp)
+    await db()`
+      update enrollments
+         set score = ${result.score}, verdict = ${result.verdict},
+             reasons = ${result.reasons}, angle = ${result.angle}
+       where id = ${enrollmentId}`
+  })
+  refresh()
 }
 
-export async function qualifyLeads(formData: FormData) {
+/** Removes everything the last qualification scored below the bar. */
+export async function dropWeak(formData: FormData) {
   await requireUser()
-  const icp = await icpText()
-  if (!icp.trim()) return
-
-  await mapLimit(ids(formData).slice(0, QUALIFY_BATCH), 5, async (id) => {
-    const [lead] = (await db()`select * from leads where id = ${id}`) as Lead[]
-    if (!lead) return
-    const result = await qualifyLead(lead, icp)
-    await db()`
-      update leads
-         set score = ${result.score}, verdict = ${result.verdict}, reasons = ${result.reasons},
-             angle = ${result.angle},
-             status = case when status = 'new'
-                           then ${result.verdict === 'weak' ? 'rejected' : 'qualified'}
-                           else status end
-       where id = ${id}`
-  })
+  const campaignId = Number(formData.get('campaignId'))
+  const floor = Number(formData.get('floor')) || 50
+  await db()`
+    delete from enrollments
+     where campaign_id = ${campaignId} and score is not null and score < ${floor}::int
+       and status = 'active'
+       and id not in (select enrollment_id from messages where status = 'sent')`
   refresh()
 }
 
@@ -264,6 +285,7 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
 
   const values = {
     name,
+    icp: String(formData.get('icp') ?? ''),
     offer: String(formData.get('offer') ?? ''),
     language: String(formData.get('language') ?? 'sv'),
     from_name: String(formData.get('from_name') ?? '') || null,
@@ -274,7 +296,8 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
   if (id) {
     await db()`
       update campaigns
-         set name = ${values.name}, offer = ${values.offer}, language = ${values.language},
+         set name = ${values.name}, icp = ${values.icp}, offer = ${values.offer},
+             language = ${values.language},
              from_name = ${values.from_name}, auto_send = ${values.auto_send},
              steps = ${values.steps}::jsonb
        where id = ${id}`
@@ -283,9 +306,9 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
   }
 
   const [created] = (await db()`
-    insert into campaigns (name, offer, language, from_name, auto_send, steps)
-    values (${values.name}, ${values.offer}, ${values.language}, ${values.from_name},
-            ${values.auto_send}, ${values.steps}::jsonb)
+    insert into campaigns (name, icp, offer, language, from_name, auto_send, steps)
+    values (${values.name}, ${values.icp}, ${values.offer}, ${values.language},
+            ${values.from_name}, ${values.auto_send}, ${values.steps}::jsonb)
     returning id`) as { id: number }[]
   redirect(`/campaigns/${created.id}`)
 }

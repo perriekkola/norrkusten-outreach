@@ -3,24 +3,27 @@ import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { db, type Campaign, type Lead } from '@/lib/db'
+import { LeadFilters } from './lead-filters'
 import { LeadsTable } from './leads-table'
 
-const STATUSES = ['all', 'new', 'qualified', 'rejected', 'contacted', 'replied', 'won', 'lost']
+const STATUSES = ['all', 'new', 'contacted', 'replied', 'won', 'lost', 'rejected']
 
 export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
   const params = await searchParams
   const status = typeof params.status === 'string' ? params.status : 'all'
   const query = typeof params.q === 'string' ? params.q.trim() : ''
+  const source = Number(params.source) || null
 
   const leads = (await db()`
     select * from leads
      where (${status} = 'all' or status = ${status})
+       and (${source}::int is null or search_id = ${source}::int)
        and (${query} = '' or
             full_name ilike ${'%' + query + '%'} or
             email ilike ${'%' + query + '%'} or
             company_name ilike ${'%' + query + '%'} or
             job_title ilike ${'%' + query + '%'})
-     order by score desc nulls last, created_at desc
+     order by created_at desc
      limit 300`) as Lead[]
 
   const campaigns = (await db()`
@@ -29,11 +32,17 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
     'id' | 'name'
   >[]
 
+  const searches = (await db()`
+    select s.id, s.label, count(l.id)::int as leads
+      from searches s left join leads l on l.search_id = s.id
+     group by s.id, s.label having count(l.id) > 0
+     order by s.created_at desc`) as { id: number; label: string; leads: number }[]
+
   return (
     <>
       <PageHeader
         title="Leads"
-        description="Select rows, then qualify, research or enroll them in a campaign."
+        description="The raw pool. Filter by source, then enroll into a campaign — scoring happens there."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -44,16 +53,14 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
             </Badge>
           </Link>
         ))}
-        <form className="ml-auto">
-          {status !== 'all' ? <input type="hidden" name="status" value={status} /> : null}
-          <input
-            name="q"
-            defaultValue={query}
-            placeholder="Search name, company, title…"
-            className="border-input bg-background h-9 w-64 rounded-md border px-3 text-sm"
-          />
-        </form>
       </div>
+
+      <LeadFilters
+        status={status}
+        query={query}
+        source={source}
+        searches={searches}
+      />
 
       {leads.length === 0 ? (
         <Card>

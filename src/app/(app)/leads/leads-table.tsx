@@ -1,11 +1,18 @@
 'use client'
 
 import Link from 'next/link'
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Table,
   TableBody,
@@ -14,20 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  deleteLeads,
-  enrollLeads,
-  qualifyLeads,
-  researchLeads,
-  setLeadStatus,
-} from '@/lib/actions'
+import { deleteLeads, enrollLeads, researchLeads, setLeadStatus } from '@/lib/actions'
 import type { Campaign, Lead } from '@/lib/db'
-
-const VERDICT_COLOR: Record<string, string> = {
-  strong: 'bg-green-500/15 text-green-700 dark:text-green-400',
-  medium: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  weak: 'bg-muted text-muted-foreground',
-}
 
 export function LeadsTable({
   leads,
@@ -74,54 +69,54 @@ export function LeadsTable({
           size="sm"
           variant="outline"
           disabled={!selected.length || !!busy}
-          onClick={() => run('qualify', qualifyLeads)}
-        >
-          {busy === 'qualify' ? 'Qualifying…' : 'Qualify with AI'}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!selected.length || !!busy}
           onClick={() => run('research', researchLeads)}
         >
           {busy === 'research' ? 'Researching…' : 'Research company'}
         </Button>
-        <select
-          className="border-input bg-background h-8 rounded-md border px-2 text-sm"
-          defaultValue=""
-          disabled={!selected.length || !!busy || campaigns.length === 0}
-          onChange={(event) => {
-            const campaignId = event.target.value
-            event.target.value = ''
-            if (campaignId) run('enroll', enrollLeads, { campaignId })
-          }}
-        >
-          <option value="">
-            {campaigns.length ? 'Enroll in campaign…' : 'No active campaigns'}
-          </option>
-          {campaigns.map((campaign) => (
-            <option key={campaign.id} value={campaign.id}>
-              {campaign.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="border-input bg-background h-8 rounded-md border px-2 text-sm"
-          defaultValue=""
-          disabled={!selected.length || !!busy}
-          onChange={(event) => {
-            const status = event.target.value
-            event.target.value = ''
-            if (status) run('status', setLeadStatus, { status })
-          }}
-        >
-          <option value="">Set status…</option>
-          {['qualified', 'rejected', 'contacted', 'replied', 'won', 'lost'].map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
+        {/* Action menus, not form inputs — a <select> that fires on change is the wrong control. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!selected.length || !!busy || campaigns.length === 0}
+            >
+              {busy === 'enroll' ? 'Enrolling…' : 'Enroll in campaign'}
+              <ChevronDown className="ml-1 size-3.5 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {campaigns.map((campaign) => (
+              <DropdownMenuItem
+                key={campaign.id}
+                onSelect={() => run('enroll', enrollLeads, { campaignId: String(campaign.id) })}
+              >
+                {campaign.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" disabled={!selected.length || !!busy}>
+              {busy === 'status' ? 'Updating…' : 'Set status'}
+              <ChevronDown className="ml-1 size-3.5 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {['new', 'contacted', 'replied', 'won', 'lost', 'rejected'].map((status) => (
+              <DropdownMenuItem
+                key={status}
+                className="capitalize"
+                onSelect={() => run('status', setLeadStatus, { status })}
+              >
+                {status}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <Button
           size="sm"
           variant="ghost"
@@ -136,8 +131,8 @@ export function LeadsTable({
       </div>
 
       <p className="text-muted-foreground -mt-2 px-2 text-xs">
-        AI actions process up to 40 leads (qualify) or 15 leads (research) per click, so the request
-        finishes inside the function timeout. Run again for the rest.
+        Research runs on up to 15 leads per click so the request finishes inside the function
+        timeout. Scoring happens inside a campaign, against that campaign&apos;s own profile.
       </p>
 
       <Card>
@@ -155,7 +150,7 @@ export function LeadsTable({
                 </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead className="w-20 text-right">Score</TableHead>
+                <TableHead className="w-24">Researched</TableHead>
                 <TableHead className="w-24">Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -182,17 +177,11 @@ export function LeadsTable({
                       {[lead.industry, lead.company_size].filter(Boolean).join(' · ') || '—'}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
-                    {lead.score === null ? (
-                      <span className="text-muted-foreground text-xs">—</span>
+                  <TableCell>
+                    {lead.research ? (
+                      <Badge variant="secondary">yes</Badge>
                     ) : (
-                      <span
-                        className={`rounded px-2 py-0.5 text-sm font-medium tabular-nums ${
-                          VERDICT_COLOR[lead.verdict ?? ''] ?? ''
-                        }`}
-                      >
-                        {lead.score}
-                      </span>
+                      <span className="text-muted-foreground text-xs">—</span>
                     )}
                   </TableCell>
                   <TableCell>

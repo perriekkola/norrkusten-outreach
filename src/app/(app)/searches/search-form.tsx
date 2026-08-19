@@ -6,7 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { MultiSelect } from '@/components/multi-select'
 import { createSearch } from '@/lib/actions'
 import {
   COMPANY_SIZE,
@@ -50,6 +58,23 @@ function Field({
   )
 }
 
+function RevenueSelect({ name }: { name: string }) {
+  return (
+    <Select name={name}>
+      <SelectTrigger className="w-full">
+        <SelectValue placeholder="Any" />
+      </SelectTrigger>
+      <SelectContent>
+        {REVENUE.map((value) => (
+          <SelectItem key={value} value={value}>
+            {value}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 export function SearchForm() {
   const [state, action, pending] = useActionState(createSearch, {})
 
@@ -60,17 +85,6 @@ export function SearchForm() {
       </CardHeader>
       <CardContent>
         <form action={action} className="space-y-5">
-          <datalist id="industries">
-            {INDUSTRIES.map((industry) => (
-              <option key={industry} value={industry} />
-            ))}
-          </datalist>
-          <datalist id="locations">
-            {LOCATIONS.map((location) => (
-              <option key={location} value={location} />
-            ))}
-          </datalist>
-
           <div className="grid grid-cols-2 gap-3">
             <Field label="Label">
               <Input name="label" placeholder="HR-chefer Sverige" required />
@@ -100,19 +114,25 @@ export function SearchForm() {
             <CheckGroup name="functional_level" options={FUNCTION} />
           </Field>
 
-          <Field label="Country / region" hint="Pick from the list. Comma separated for several.">
-            <Input name="contact_location" list="locations" placeholder="sweden" />
+          <Field label="Country / region" hint="Leave empty if you target cities instead.">
+            <MultiSelect
+              name="contact_location"
+              options={LOCATIONS}
+              placeholder="Search countries, regions, states…"
+              emptyText="No location matches."
+            />
           </Field>
 
           <Field label="Cities" hint="Use instead of country for city-level targeting.">
             <Textarea name="contact_city" rows={2} placeholder="stockholm, göteborg" />
           </Field>
 
-          <Field label="Industries" hint="Start typing to pick from Apify's list. Comma separated.">
-            <Input
+          <Field label="Industries">
+            <MultiSelect
               name="company_industry"
-              list="industries"
-              placeholder="information technology & services"
+              options={INDUSTRIES}
+              placeholder="Search Apify's industry list…"
+              emptyText="No industry matches."
             />
           </Field>
 
@@ -130,32 +150,10 @@ export function SearchForm() {
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Min revenue">
-              <select
-                name="min_revenue"
-                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-                defaultValue=""
-              >
-                <option value="">Any</option>
-                {REVENUE.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+              <RevenueSelect name="min_revenue" />
             </Field>
             <Field label="Max revenue">
-              <select
-                name="max_revenue"
-                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-                defaultValue=""
-              >
-                <option value="">Any</option>
-                {REVENUE.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
+              <RevenueSelect name="max_revenue" />
             </Field>
           </div>
 

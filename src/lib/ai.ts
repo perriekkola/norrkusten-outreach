@@ -4,7 +4,22 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import type { Campaign, Lead } from './db'
 
-const MODEL = 'claude-opus-5'
+/**
+ * One model per task, overridable without a deploy. Research dominates the bill —
+ * web search pulls tens of thousands of input tokens per lead — and it is summarising
+ * fetched pages, so Haiku carries it. Drafting stays on Opus: that output is the reply rate.
+ */
+const MODEL = {
+  qualify: process.env.CLAUDE_MODEL_QUALIFY || 'claude-sonnet-5',
+  research: process.env.CLAUDE_MODEL_RESEARCH || 'claude-haiku-4-5',
+  draft: process.env.CLAUDE_MODEL_DRAFT || 'claude-opus-5',
+}
+
+/** Haiku 4.5 predates both `output_config.effort` and the 2026 web-search tool. */
+const isLegacy = (model: string) => model.includes('haiku-4-5') || model.includes('-4-5')
+
+const effort = (model: string, level: 'low' | 'medium' | 'high') =>
+  isLegacy(model) ? undefined : level
 
 let client: Anthropic | null = null
 function anthropic() {
@@ -57,9 +72,9 @@ export type Qualification = z.infer<typeof Qualification>
 
 export async function qualifyLead(lead: Lead, icp: string): Promise<Qualification> {
   const message = await anthropic().messages.parse({
-    model: MODEL,
+    model: MODEL.qualify,
     max_tokens: 4000,
-    output_config: { effort: 'low', format: zodOutputFormat(Qualification) },
+    output_config: { effort: effort(MODEL.qualify, 'low'), format: zodOutputFormat(Qualification) },
     system:
       'You score B2B leads for an e-learning course provider. Be strict: most leads are a weak ' +
       'fit. Score on decision-making power over training budgets, likely need for the courses ' +
@@ -95,10 +110,14 @@ export async function researchCompany(lead: Lead): Promise<string> {
   // Server tools can pause the turn; continue until Claude finishes (bounded).
   for (let attempt = 0; attempt < 4; attempt++) {
     const message = await anthropic().messages.create({
-      model: MODEL,
+      model: MODEL.research,
       max_tokens: 8000,
-      output_config: { effort: 'low' },
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }],
+      ...(isLegacy(MODEL.research) ? {} : { output_config: { effort: 'low' as const } }),
+      tools: [
+        isLegacy(MODEL.research)
+          ? { type: 'web_search_20250305' as const, name: 'web_search' as const, max_uses: 6 }
+          : { type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 6 },
+      ],
       messages,
     })
     guardRefusal(message)
@@ -122,9 +141,11 @@ export async function draftEmail(args: {
   campaign: Campaign
   step: number
   senderName: string
+  /** From the enrollment — this campaign's angle, not a global one. */
+  angle: string | null
   previous: { subject: string; body: string }[]
 }): Promise<Draft> {
-  const { lead, campaign, step, senderName, previous } = args
+  const { lead, campaign, step, senderName, angle, previous } = args
   const goal = campaign.steps[step]?.goal ?? 'A brief, polite follow-up.'
   const language = campaign.language === 'sv' ? 'Swedish' : campaign.language
 
@@ -135,7 +156,7 @@ export async function draftEmail(args: {
     : '(none — this is the first touch)'
 
   const message = await anthropic().messages.parse({
-    model: MODEL,
+    model: MODEL.draft,
     max_tokens: 8000,
     output_config: { format: zodOutputFormat(Draft) },
     system:
@@ -152,7 +173,7 @@ export async function draftEmail(args: {
           `What we sell:\n${campaign.offer}`,
           `Goal of this email (step ${step + 1} of ${campaign.steps.length}):\n${goal}`,
           `Lead:\n${leadContext(lead)}`,
-          `Qualification angle: ${lead.angle ?? '—'}`,
+          `Qualification angle for this campaign: ${angle ?? '—'}`,
           `Company research:\n${lead.research ?? '(none)'}`,
           `Earlier emails in this thread:\n${thread}`,
         ].join('\n\n'),

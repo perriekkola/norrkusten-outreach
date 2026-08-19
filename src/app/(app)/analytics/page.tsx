@@ -37,7 +37,8 @@ export default async function AnalyticsPage() {
   const [funnel] = (await db()`
     select
       (select count(*) from leads)::int                                                as leads,
-      (select count(*) from leads where score is not null and verdict <> 'weak')::int  as qualified,
+      (select count(distinct lead_id) from enrollments
+        where score >= 50)::int                                                        as qualified,
       (select count(distinct lead_id) from enrollments)::int                           as enrolled,
       (select count(*) from messages where status = 'sent')::int                       as sent,
       (select count(*) from messages where opened_at is not null)::int                 as opened,

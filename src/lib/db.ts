@@ -47,12 +47,23 @@ export type Lead = {
   industry: string | null
   company_description: string | null
   raw: Record<string, unknown>
+  research: string | null
+  status: string
+  created_at: string
+}
+
+export type Enrollment = {
+  id: number
+  campaign_id: number
+  lead_id: number
+  step: number
+  status: 'active' | 'done' | 'replied' | 'stopped' | 'bounced'
+  next_send_at: string
+  /** Scored against this campaign's ICP, not a global one. */
   score: number | null
   verdict: string | null
   reasons: string | null
   angle: string | null
-  research: string | null
-  status: string
   created_at: string
 }
 
@@ -61,6 +72,7 @@ export type CampaignStep = { delay_days: number; goal: string }
 export type Campaign = {
   id: number
   name: string
+  icp: string
   offer: string
   language: string
   from_name: string | null

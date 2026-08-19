@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { saveCampaign } from '@/lib/actions'
 import type { Campaign, CampaignStep } from '@/lib/db'
@@ -40,6 +47,20 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="icp">Who this campaign targets</Label>
+        <Textarea
+          id="icp"
+          name="icp"
+          rows={10}
+          defaultValue={campaign?.icp}
+          placeholder="The scoring rubric for this campaign only. Who is a strong fit, who is medium, who is a poor fit — and why. Claude scores every enrolled lead against this text."
+        />
+        <p className="text-muted-foreground text-xs">
+          Scored per campaign, so the same lead can be strong here and weak elsewhere.
+        </p>
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="offer">What you are selling</Label>
         <Textarea
           id="offer"
@@ -53,18 +74,24 @@ export function CampaignForm({ campaign }: { campaign?: Campaign }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="language">Language</Label>
-          <select
-            id="language"
-            name="language"
-            defaultValue={campaign?.language ?? 'sv'}
-            className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-          >
-            <option value="sv">Swedish</option>
-            <option value="en">English</option>
-            <option value="no">Norwegian</option>
-            <option value="da">Danish</option>
-            <option value="fi">Finnish</option>
-          </select>
+          <Select name="language" defaultValue={campaign?.language ?? 'sv'}>
+            <SelectTrigger id="language" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[
+                { value: 'sv', label: 'Swedish' },
+                { value: 'en', label: 'English' },
+                { value: 'no', label: 'Norwegian' },
+                { value: 'da', label: 'Danish' },
+                { value: 'fi', label: 'Finnish' },
+              ].map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm">
           <Checkbox name="auto_send" defaultChecked={campaign?.auto_send} />

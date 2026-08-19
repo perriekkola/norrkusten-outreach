@@ -45,18 +45,15 @@ create table if not exists leads (
   industry            text,
   company_description text,
   raw                 jsonb not null default '{}'::jsonb,
-  score               int,
-  verdict             text,                     -- strong | medium | weak
-  reasons             text,
-  angle               text,
-  research            text,
-  status              text not null default 'new', -- new | qualified | rejected | contacted | replied | won | lost
+  research            text,                     -- company brief; campaign-independent, so it lives here
+  status              text not null default 'new', -- new | contacted | replied | won | lost | rejected
   created_at          timestamptz not null default now()
 );
 
 create table if not exists campaigns (
   id         serial primary key,
   name       text not null,
+  icp        text not null default '',          -- who this campaign targets; drives scoring
   offer      text not null default '',
   language   text not null default 'sv',
   from_name  text,
@@ -72,6 +69,10 @@ create table if not exists enrollments (
   lead_id      int not null references leads(id) on delete cascade,
   step         int not null default 0,
   status       text not null default 'active',  -- active | done | replied | stopped | bounced
+  score        int,                             -- scored against THIS campaign's ICP
+  verdict      text,                            -- strong | medium | weak
+  reasons      text,
+  angle        text,
   next_send_at timestamptz not null default now(),
   created_at   timestamptz not null default now(),
   unique (campaign_id, lead_id)
@@ -103,3 +104,16 @@ create index if not exists idx_msg_provider    on messages(provider_id);
 -- analytics
 alter table messages add column if not exists open_count int not null default 0;
 create index if not exists idx_enroll_lead on enrollments(lead_id);
+
+-- Scoring moved from leads to enrollments: a lead can be a strong fit for one
+-- campaign and a poor fit for another, so the score belongs to the pairing.
+alter table campaigns   add column if not exists icp     text not null default '';
+alter table enrollments add column if not exists score   int;
+alter table enrollments add column if not exists verdict text;
+alter table enrollments add column if not exists reasons text;
+alter table enrollments add column if not exists angle   text;
+alter table leads drop column if exists score;
+alter table leads drop column if exists verdict;
+alter table leads drop column if exists reasons;
+alter table leads drop column if exists angle;
+create index if not exists idx_enroll_score on enrollments(campaign_id, score desc nulls last);

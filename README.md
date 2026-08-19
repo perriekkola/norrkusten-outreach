@@ -15,8 +15,8 @@ Apify search  →  leads  →  Claude qualify + research  →  campaign  →  ou
 | Page | What it does |
 |---|---|
 | **Searches** | Runs the `code_crafter/leads-finder` Apify actor with your filters. Results import automatically. |
-| **Leads** | Select rows → qualify against your ICP (0–100 score + angle), research the company via Claude's web search, enroll in a campaign. |
-| **Campaigns** | A sequence of *goals*, not templates. Claude writes each email per lead from the offer, the research and the thread so far. |
+| **Leads** | The raw pool. Filter by source search, research a company via Claude's web search, enroll into a campaign. |
+| **Campaigns** | The workspace. Each campaign carries its own ICP, offer and sequence. Enrolled leads are scored against *that* campaign's ICP, so one lead can be strong here and weak elsewhere. Claude writes each email from the offer, the research, the campaign angle and the thread so far. |
 | **Outbox** | Every draft waits for approval (unless the campaign has auto-send on). Edit, approve, send now or discard. |
 | **Analytics** | Funnel, 30-day activity, per-campaign open and reply rates. |
 | **Settings** | Your ICP text, sender name, admin users, and which env vars are set. |
@@ -52,6 +52,9 @@ Vercel → Settings → Environment Variables.
 |---|---|
 | `DATABASE_URL` | From Neon |
 | `ANTHROPIC_API_KEY` | console.anthropic.com |
+| `CLAUDE_MODEL_QUALIFY` | Optional. Default `claude-sonnet-5` |
+| `CLAUDE_MODEL_RESEARCH` | Optional. Default `claude-haiku-4-5` — research is the bulk of the bill |
+| `CLAUDE_MODEL_DRAFT` | Optional. Default `claude-opus-5` — this output is the reply rate |
 | `APIFY_TOKEN` | apify.com → Settings → API tokens |
 | `SMTP_HOST` / `SMTP_PORT` | one.com: `send.one.com`, `465` |
 | `SMTP_USER` / `SMTP_PASS` | Full mailbox address + its password |
@@ -71,7 +74,9 @@ npm run dev
 Open `/login`. With no users in the database the form creates the admin account — the
 first email and password you enter become the login. Add more people later under Settings.
 
-Then fill in **Settings → Ideal customer profile**. Lead qualification does nothing without it.
+Targeting lives on the campaign, not globally: create a campaign, write its ICP, enroll a
+search's leads into it, then press **Score unscored**. Scoring does nothing until that
+campaign has an ICP.
 
 ### 4. Deploy
 
