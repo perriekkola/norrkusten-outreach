@@ -7,11 +7,13 @@ export default async function LoginPage() {
   if (await currentUser()) redirect('/')
 
   let firstRun = false
-  let dbError: string | null = null
+  let dbError = false
   try {
     firstRun = (await userCount()) === 0
   } catch (error) {
-    dbError = String(error)
+    // Public page — log the detail, never render it.
+    console.error('login: database unavailable', error)
+    dbError = true
   }
 
   return (
@@ -20,10 +22,9 @@ export default async function LoginPage() {
         <Image src="/logo.svg" alt="Norrkusten" width={166} height={40} priority />
         {dbError ? (
           <div className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-4 text-sm">
-            <p className="font-medium">Database not reachable</p>
-            <p className="mt-1 break-words opacity-80">{dbError}</p>
-            <p className="mt-2 opacity-80">
-              Set <code>DATABASE_URL</code>, then run <code>npm run db:push</code>.
+            <p className="font-medium">Temporarily unavailable</p>
+            <p className="mt-1 opacity-80">
+              The service can&apos;t reach its database. The details are in the server logs.
             </p>
           </div>
         ) : (
