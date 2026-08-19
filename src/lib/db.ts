@@ -83,8 +83,8 @@ export type Campaign = {
   min_score: number
   /** Extra drafting rules for this campaign — tone, what to ask for, what to avoid. */
   guidelines: string
-  /** The page every email in this campaign should point at. */
-  link_url: string
+  /** Pages the emails should point at. Several when a campaign pitches more than one course. */
+  links: string[]
   steps: CampaignStep[]
   status: 'active' | 'paused'
   created_at: string

@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { refresh } from 'next/cache'
+import { draftCampaign } from './ai'
 import { startRun, abortRun, type LeadSearchInput } from './apify'
 import {
   checkPassword,
@@ -11,7 +12,7 @@ import {
   startSession,
   userCount,
 } from './auth'
-import { db, jsonb, setSetting, type CampaignStep } from './db'
+import { db, getSetting, jsonb, setSetting, type CampaignStep } from './db'
 import { draftForEnrollment, ingestSearches, runCampaign, sendMessage, tick } from './engine'
 
 type State = { error?: string; ok?: string }
@@ -174,6 +175,29 @@ export async function deleteSearch(formData: FormData) {
  * Scores enrolled leads against their campaign's own ICP. Scoring is per pairing:
  * the same lead can be strong for one campaign and weak for another.
  */
+type DraftState = State & { draft?: import('./ai').CampaignDraft }
+
+/** Reads the pasted links, then drafts every campaign field for the user to edit. */
+export async function generateCampaign(_prev: DraftState, formData: FormData): Promise<DraftState> {
+  await requireUser()
+  const brief = String(formData.get('brief') ?? '').trim()
+  if (!brief) return { error: 'Describe what you want to sell, or paste a course link.' }
+
+  // Anything that looks like a URL in the brief is a page to read.
+  const links = [...brief.matchAll(/https?:\/\/[^\s<>"']+/g)].map((match) => match[0])
+
+  try {
+    const draft = await draftCampaign({
+      brief,
+      links,
+      senderName: (await getSetting('sender_name')) || 'Norrkusten',
+    })
+    return { ok: 'Drafted. Read every field before creating — it can get things wrong.', draft }
+  } catch (error) {
+    return { error: String(error) }
+  }
+}
+
 /** One bounded pass: enrol, score, draft. Reports what it did and what is left. */
 export async function runCampaignNow(_prev: State, formData: FormData): Promise<State> {
   await requireUser()
@@ -277,7 +301,10 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
     sources: formData.getAll('source_search_ids').map(Number).filter(Number.isFinite),
     minScore: Math.max(0, Math.min(100, Number(formData.get('min_score')) || 0)),
     guidelines: String(formData.get('guidelines') ?? ''),
-    linkUrl: String(formData.get('link_url') ?? '').trim(),
+    links: formData
+      .getAll('links')
+      .map((value) => String(value).trim())
+      .filter(Boolean),
     offer: String(formData.get('offer') ?? ''),
     language: String(formData.get('language') ?? 'sv'),
     from_name: String(formData.get('from_name') ?? '') || null,
@@ -290,7 +317,7 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
       update campaigns
          set name = ${values.name}, icp = ${values.icp}, offer = ${values.offer},
              source_search_ids = ${values.sources}::int[], min_score = ${values.minScore},
-             guidelines = ${values.guidelines}, link_url = ${values.linkUrl},
+             guidelines = ${values.guidelines}, links = ${values.links}::text[],
              language = ${values.language},
              from_name = ${values.from_name}, auto_send = ${values.auto_send},
              steps = ${values.steps}::jsonb
@@ -301,10 +328,10 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
 
   const [created] = (await db()`
     insert into campaigns
-      (name, icp, offer, source_search_ids, min_score, guidelines, link_url, language,
+      (name, icp, offer, source_search_ids, min_score, guidelines, links, language,
        from_name, auto_send, steps)
     values (${values.name}, ${values.icp}, ${values.offer}, ${values.sources}::int[],
-            ${values.minScore}, ${values.guidelines}, ${values.linkUrl}, ${values.language},
+            ${values.minScore}, ${values.guidelines}, ${values.links}::text[], ${values.language},
             ${values.from_name}, ${values.auto_send}, ${values.steps}::jsonb)
     returning id`) as { id: number }[]
   redirect(`/campaigns/${created.id}`)

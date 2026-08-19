@@ -58,7 +58,7 @@ create table if not exists campaigns (
   source_search_ids int[] not null default '{}',-- searches this campaign pulls leads from
   min_score  int not null default 50,           -- below this, never drafted or sent
   guidelines text not null default '',          -- how this campaign's emails should read
-  link_url   text not null default '',          -- the page each email should point at
+  links      text[] not null default '{}',      -- pages the emails should point at
   language   text not null default 'sv',
   from_name  text,
   auto_send  boolean not null default false,
@@ -131,6 +131,7 @@ alter table campaigns add column if not exists min_score int not null default 50
 
 -- Per-campaign control over how the email is written, and what it links to.
 alter table campaigns add column if not exists guidelines text not null default '';
-alter table campaigns add column if not exists link_url   text not null default '';
+alter table campaigns add column if not exists links      text[] not null default '{}';
+alter table campaigns drop column if exists link_url;
 alter table messages  add column if not exists click_count int not null default 0;
 alter table messages  add column if not exists clicked_at  timestamptz;

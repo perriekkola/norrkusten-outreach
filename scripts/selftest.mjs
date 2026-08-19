@@ -131,6 +131,21 @@ assert.deepEqual(
   'due list is best-first and excludes the below-floor lead',
 )
 
+// A campaign can carry several links; the drafter is given the whole list.
+await db.query(`update campaigns set links = $1::text[] where id = 1`, [
+  ['https://a.test/kurs', 'https://b.test/kurs'],
+])
+assert.deepEqual(
+  (await q(`select links from campaigns where id = 1`))[0].links,
+  ['https://a.test/kurs', 'https://b.test/kurs'],
+  'links round-trip as a text[]',
+)
+assert.deepEqual(
+  (await q(`select links from campaigns where id = 2`))[0].links,
+  [],
+  'a campaign with no links defaults to empty, not null',
+)
+
 // Optional date params go in as null, never ''. On Neon, `$1 = '' or col >= $1::date`
 // fails with 22007 because ''::date is folded before the OR short-circuits. PGlite does
 // not reproduce that, so this only pins the shape that works — the guard is the pattern

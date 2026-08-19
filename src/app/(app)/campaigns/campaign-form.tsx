@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { saveCampaign } from '@/lib/actions'
+import type { CampaignDraft } from '@/lib/ai'
 import type { Campaign, CampaignStep } from '@/lib/db'
 
 const DEFAULT_STEPS: CampaignStep[] = [
@@ -26,12 +27,21 @@ const DEFAULT_STEPS: CampaignStep[] = [
 export function CampaignForm({
   campaign,
   searches,
+  draft,
 }: {
   campaign?: Campaign
   searches: { id: number; label: string; leads: number }[]
+  /** An AI-generated starting point. Fields stay editable — this only seeds them. */
+  draft?: CampaignDraft
 }) {
   const [state, action, pending] = useActionState(saveCampaign, {})
-  const [steps, setSteps] = useState<CampaignStep[]>(campaign?.steps.length ? campaign.steps : DEFAULT_STEPS)
+  const initial = draft ?? campaign
+  const [steps, setSteps] = useState<CampaignStep[]>(
+    initial?.steps?.length ? initial.steps : DEFAULT_STEPS,
+  )
+  const [links, setLinks] = useState<string[]>(
+    draft?.links?.length ? draft.links : campaign?.links?.length ? campaign.links : [''],
+  )
 
   return (
     <form action={action} className="max-w-2xl space-y-6">
@@ -40,7 +50,7 @@ export function CampaignForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="name">Name</Label>
-          <Input id="name" name="name" defaultValue={campaign?.name} required />
+          <Input id="name" name="name" defaultValue={initial?.name} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="from_name" className="flex items-center gap-1.5">
@@ -108,7 +118,7 @@ export function CampaignForm({
           type="number"
           min={0}
           max={100}
-          defaultValue={campaign?.min_score ?? 50}
+          defaultValue={initial?.min_score ?? 50}
           className="w-32"
         />
         <p className="text-muted-foreground text-xs">
@@ -131,7 +141,7 @@ export function CampaignForm({
           id="icp"
           name="icp"
           rows={10}
-          defaultValue={campaign?.icp}
+          defaultValue={initial?.icp}
           placeholder="The scoring rubric for this campaign only. Who is a strong fit, who is medium, who is a poor fit — and why. Claude scores every enrolled lead against this text."
         />
         <p className="text-muted-foreground text-xs">
@@ -152,27 +162,52 @@ export function CampaignForm({
           id="offer"
           name="offer"
           rows={5}
-          defaultValue={campaign?.offer}
+          defaultValue={initial?.offer}
           placeholder="Describe the courses, who they help and the outcome. Claude uses this verbatim when writing."
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="link_url" className="flex items-center gap-1.5">
-          Link to include
-          <Hint>
-            Every email points here — the course page, a booking page, whatever this campaign is
-            driving to. Claude is told to include it once, as a bare URL on its own line. Links
-            in sent mail are rewritten through a tracker so clicks show up in Analytics.
-          </Hint>
-        </Label>
-        <Input
-          id="link_url"
-          name="link_url"
-          type="url"
-          defaultValue={campaign?.link_url}
-          placeholder="https://norrkusten.se/kurser/..."
-        />
+        <div className="flex items-center justify-between">
+          <Label className="flex items-center gap-1.5">
+            Links to include
+            <Hint>
+              The pages these emails drive to. Add several when the campaign pitches more than
+              one course — Claude picks the most relevant one per email and never invents a URL
+              outside this list. Links in sent mail are rewritten through a tracker so clicks
+              show up in Analytics.
+            </Hint>
+          </Label>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setLinks((current) => [...current, ''])}
+          >
+            Add link
+          </Button>
+        </div>
+        {links.map((link, index) => (
+          <div key={index} className="flex gap-2">
+            <Input
+              name="links"
+              type="url"
+              defaultValue={link}
+              placeholder="https://norrkusten.se/kurser/..."
+            />
+            {links.length > 1 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={() => setLinks((current) => current.filter((_, i) => i !== index))}
+              >
+                ✕
+              </Button>
+            ) : null}
+          </div>
+        ))}
       </div>
 
       <div className="space-y-2">
@@ -188,7 +223,7 @@ export function CampaignForm({
           id="guidelines"
           name="guidelines"
           rows={5}
-          defaultValue={campaign?.guidelines}
+          defaultValue={initial?.guidelines}
           placeholder={
             'Be be konkret och kort. Avsluta med att be dem läsa kurssidan och svara om de har ' +
             'frågor — föreslå aldrig ett möte.'
@@ -202,7 +237,7 @@ export function CampaignForm({
             Language
             <Hint>The language Claude writes the emails in. It does not filter leads.</Hint>
           </Label>
-          <Select name="language" defaultValue={campaign?.language ?? 'sv'}>
+          <Select name="language" defaultValue={initial?.language ?? 'sv'}>
             <SelectTrigger id="language" className="w-full">
               <SelectValue />
             </SelectTrigger>

@@ -13,6 +13,8 @@ const MODEL = {
   qualify: process.env.CLAUDE_MODEL_QUALIFY || 'claude-sonnet-5',
   research: process.env.CLAUDE_MODEL_RESEARCH || 'claude-haiku-4-5',
   draft: process.env.CLAUDE_MODEL_DRAFT || 'claude-opus-5',
+  /** Once per campaign, and every later email depends on it — worth the best model. */
+  campaign: process.env.CLAUDE_MODEL_CAMPAIGN || 'claude-opus-5',
 }
 
 /** Haiku 4.5 predates both `output_config.effort` and the 2026 web-search tool. */
@@ -207,8 +209,10 @@ export async function draftEmail(args: {
         content: [
           `What we sell:\n${campaign.offer}`,
           `Goal of this email (step ${step + 1} of ${campaign.steps.length}):\n${goal}`,
-          campaign.link_url
-            ? `Include this link exactly once, as a bare URL on its own line:\n${campaign.link_url}`
+          campaign.links.length
+            ? `Include ${campaign.links.length === 1 ? 'this link' : 'the most relevant of these links'} ` +
+              `as a bare URL on its own line. Never more than one link per email, and never ` +
+              `a URL that is not in this list:\n${campaign.links.join('\n')}`
             : 'There is no link for this campaign — do not invent a URL.',
           `Lead:\n${leadContext(lead)}`,
           `Qualification angle for this campaign: ${angle ?? '—'}`,
@@ -221,4 +225,120 @@ export async function draftEmail(args: {
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no draft')
   return message.parsed_output
+}
+
+/* ----------------------------------------------------------------- campaign */
+
+const CampaignDraft = z.object({
+  name: z.string().describe('Short internal name. Not a subject line.'),
+  language: z.enum(['sv', 'en', 'no', 'da', 'fi']),
+  icp: z
+    .string()
+    .describe(
+      'The scoring rubric. Who is a strong fit (75-100), medium (40-74) and poor (0-39), ' +
+        'with reasons. Must name who is a POOR fit, including competitors, or everything scores high.',
+    ),
+  offer: z
+    .string()
+    .describe(
+      'What is being sold, in verifiable detail: course names, format, length, price, what it ' +
+        'covers, who it is for. Only facts found on the pages or given by the user.',
+    ),
+  guidelines: z
+    .string()
+    .describe(
+      'How the emails should read: the single call to action, tone, and an explicit list of ' +
+        'what never to do. Match the ask to the price — a cheap self-serve product should ' +
+        'never ask for a meeting.',
+    ),
+  min_score: z.number().min(0).max(100),
+  steps: z
+    .array(
+      z.object({
+        delay_days: z.number().min(0).max(60),
+        goal: z.string().describe('What this email should achieve, and what to avoid.'),
+      }),
+    )
+    .min(2)
+    .max(5)
+    .describe('First step must have delay_days 0. Later delays are days since the previous send.'),
+})
+
+/** Links are passed through from the user's brief, never echoed by the model — it could
+ *  silently mangle a URL, and a broken link in a real email is worse than no link. */
+export type CampaignDraft = z.infer<typeof CampaignDraft> & { links: string[] }
+
+/** Reads whatever the user pasted — links get fetched, claims get checked. */
+async function readSources(brief: string, links: string[]): Promise<string> {
+  const messages: Anthropic.MessageParam[] = [
+    {
+      role: 'user',
+      content:
+        `Research the basis for a cold outreach campaign.\n\nWhat we want to sell:\n${brief}\n\n` +
+        (links.length
+          ? `Fetch each of these pages and summarise them:\n${links.join('\n')}\n\n`
+          : 'No pages were given — search the web for what is described above.\n\n') +
+        'Return plain prose, no markdown. Cover, for each product: exact name, what it covers, ' +
+        'who it is aimed at, format, length, price, and anything that removes buying friction ' +
+        'such as certificates or volume discounts. Then note any deadline, regulation or event ' +
+        'that makes this urgent right now, with dates. State plainly what you could not find ' +
+        'rather than guessing — an invented price ends up in a real email.',
+    },
+  ]
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const message = await anthropic().messages.create({
+      model: MODEL.campaign,
+      max_tokens: 8000,
+      tools: [
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 8 },
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 4 },
+      ],
+      messages,
+    })
+    guardRefusal(message)
+    if (message.stop_reason !== 'pause_turn') return finalText(message.content)
+    messages.push({ role: 'assistant', content: message.content })
+  }
+  throw new Error('Reading the sources did not finish — try again')
+}
+
+/** Drafts every campaign field from a brief and any links, for the user to edit. */
+export async function draftCampaign(args: {
+  brief: string
+  links: string[]
+  senderName: string
+}): Promise<CampaignDraft> {
+  const sources = await readSources(args.brief, args.links)
+
+  const message = await anthropic().messages.parse({
+    model: MODEL.campaign,
+    max_tokens: 16000,
+    output_config: { format: zodOutputFormat(CampaignDraft) },
+    system:
+      'You set up cold outreach campaigns. Everything you write is read by another model that ' +
+      'treats it as fact, so an invented price or claim ends up in a real email to a real ' +
+      'person. Use only what the research below establishes. Where something is unknown, leave ' +
+      'it out rather than guessing.\n\n' +
+      'Two things people get wrong and you must not: the ICP has to say who is a POOR fit, ' +
+      'including competitors who sell the same thing, or every lead scores high and the filter ' +
+      'is useless. And the ask has to match the price — a self-serve product costing a few ' +
+      'thousand kronor should send people to the page to read and buy, never to a meeting.',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `Emails will be signed by ${args.senderName}.`,
+          `What the user asked for:\n${args.brief}`,
+          args.links.length ? `Links to point at:\n${args.links.join('\n')}` : '',
+          `Research:\n${sources}`,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+  })
+  guardRefusal(message)
+  if (!message.parsed_output) throw new Error('Claude returned no campaign draft')
+  return { ...message.parsed_output, links: args.links }
 }

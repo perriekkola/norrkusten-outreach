@@ -1,6 +1,8 @@
 import { PageHeader } from '@/components/page-header'
 import { db } from '@/lib/db'
-import { CampaignForm } from '../campaign-form'
+import { NewCampaign } from './new-campaign'
+
+export const maxDuration = 300
 
 export default async function NewCampaignPage() {
   const searches = (await db()`
@@ -13,9 +15,9 @@ export default async function NewCampaignPage() {
     <>
       <PageHeader
         title="New campaign"
-        description="Each step is a goal, not a template — Claude writes the actual email per lead."
+        description="Describe what you want to sell and let Claude draft it, or fill it in yourself."
       />
-      <CampaignForm searches={searches} />
+      <NewCampaign searches={searches} />
     </>
   )
 }
