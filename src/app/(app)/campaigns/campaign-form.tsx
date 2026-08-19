@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react'
 import { Hint } from '@/components/hint'
+import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -359,6 +360,7 @@ export function CampaignForm({
       {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
 
       <Button type="submit" disabled={pending}>
+        {pending ? <Spinner /> : null}
         {pending ? 'Saving…' : campaign ? 'Save changes' : 'Create campaign'}
       </Button>
     </form>

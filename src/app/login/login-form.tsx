@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,6 +41,7 @@ export function LoginForm({ firstRun }: { firstRun: boolean }) {
       {state.error ? <p className="text-destructive text-sm">{state.error}</p> : null}
 
       <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? <Spinner /> : null}
         {pending ? 'Working…' : firstRun ? 'Create account' : 'Sign in'}
       </Button>
     </form>

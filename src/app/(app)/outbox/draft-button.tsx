@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { Hint } from '@/components/hint'
+import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { generateDrafts } from '@/lib/actions'
 
@@ -11,6 +12,7 @@ export function DraftButton() {
   return (
     <form action={action} className="flex items-center gap-1.5">
       <Button type="submit" size="sm" variant="outline" disabled={pending}>
+        {pending ? <Spinner /> : null}
         {pending ? 'Drafting…' : 'Draft due emails'}
       </Button>
       <Hint>

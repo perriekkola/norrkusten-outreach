@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { refresh } from 'next/cache'
-import { describeApiError, draftCampaign } from './ai'
+import { describeApiError } from './ai'
 import { startRun, abortRun, type LeadSearchInput } from './apify'
 import {
   checkPassword,
@@ -12,10 +12,10 @@ import {
   startSession,
   userCount,
 } from './auth'
-import { db, getSetting, jsonb, setSetting, type CampaignStep, type Mailbox } from './db'
+import { db, jsonb, setSetting, type CampaignStep, type Mailbox } from './db'
 import { forgetMailbox, verifyMailbox } from './email'
 import { encrypt } from './secrets'
-import { draftForEnrollment, ingestSearches, runCampaign, sendMessage, tick } from './engine'
+import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
 type State = { error?: string; ok?: string }
 
@@ -237,67 +237,6 @@ export async function deleteSearch(formData: FormData) {
  * Scores enrolled leads against their campaign's own ICP. Scoring is per pairing:
  * the same lead can be strong for one campaign and weak for another.
  */
-type DraftState = State & { draft?: import('./ai').CampaignDraft }
-
-/** Reads the pasted links, then drafts every campaign field for the user to edit. */
-export async function generateCampaign(_prev: DraftState, formData: FormData): Promise<DraftState> {
-  await requireUser()
-  const brief = String(formData.get('brief') ?? '').trim()
-  if (!brief) return { error: 'Describe what you want to sell, or paste a course link.' }
-
-  // Anything that looks like a URL in the brief is a page to read.
-  const links = [...brief.matchAll(/https?:\/\/[^\s<>"']+/g)].map((match) => match[0])
-
-  try {
-    const searches = (await db()`
-      select s.id, s.label, count(l.id)::int as leads
-        from searches s left join leads l on l.search_id = s.id
-       group by s.id, s.label having count(l.id) > 0
-       order by s.created_at desc`) as { id: number; label: string; leads: number }[]
-
-    const draft = await draftCampaign({
-      brief,
-      links,
-      senderName: (await getSetting('sender_name')) || 'Norrkusten',
-      searches,
-    })
-    return { ok: 'Drafted. Read every field before creating — it can get things wrong.', draft }
-  } catch (error) {
-    console.error('campaign draft failed', error)
-    return { error: describeApiError(error) }
-  }
-}
-
-/** One bounded pass: enrol, score, draft. Reports what it did and what is left. */
-export async function runCampaignNow(_prev: State, formData: FormData): Promise<State> {
-  await requireUser()
-  const pass = await runCampaign(Number(formData.get('campaignId')))
-  refresh()
-
-  const did = [
-    pass.enrolled && `enrolled ${pass.enrolled}`,
-    pass.scored && `scored ${pass.scored}`,
-    pass.drafted && `drafted ${pass.drafted}`,
-  ].filter(Boolean)
-
-  const left = [
-    pass.unscored && `${pass.unscored} still unscored`,
-    pass.due && `${pass.due} still to draft`,
-  ].filter(Boolean)
-
-  if (!did.length && !left.length) return { ok: 'Nothing to do — everything is up to date.' }
-
-  return {
-    ok: [
-      did.length ? did.join(', ') : 'Nothing new to do',
-      left.length ? `${left.join(' and ')} — run again to continue` : null,
-      pass.failed ? `${pass.failed} failed: ${pass.reason}` : null,
-    ]
-      .filter(Boolean)
-      .join('. '),
-  }
-}
-
 /** Removes everything the last qualification scored below the bar. */
 export async function dropWeak(formData: FormData) {
   await requireUser()

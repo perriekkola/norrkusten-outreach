@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { ConfirmButton } from '@/components/confirm-button'
+import { Spinner } from '@/components/spinner'
 import { Hint } from '@/components/hint'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -80,6 +81,7 @@ export function LeadsTable({
               variant="outline"
               disabled={!selected.length || !!busy || campaigns.length === 0}
             >
+              {busy === 'enroll' ? <Spinner /> : null}
               {busy === 'enroll' ? 'Enrolling…' : 'Enroll in campaign'}
               <ChevronDown className="ml-1 size-3.5 opacity-60" />
             </Button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Spinner } from '@/components/spinner'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +70,7 @@ export function ConfirmButton({
         disabled={disabled || pending}
         onClick={() => setOpen(true)}
       >
+        {pending ? <Spinner /> : null}
         {pending ? pendingLabel : children}
       </Button>
 
@@ -87,6 +89,7 @@ export function ConfirmButton({
               }}
               disabled={pending}
             >
+              {pending ? <Spinner /> : null}
               {pending ? pendingLabel : confirmLabel}
             </AlertDialogAction>
           </AlertDialogFooter>

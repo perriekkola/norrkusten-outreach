@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,6 +18,7 @@ export function SettingsForm({ senderName }: { senderName: string }) {
       </div>
       {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
       <Button type="submit" disabled={pending}>
+        {pending ? <Spinner /> : null}
         {pending ? 'Saving…' : 'Save'}
       </Button>
     </form>
@@ -43,7 +45,8 @@ export function UserForm() {
         className="w-44"
       />
       <Button type="submit" variant="outline" disabled={pending}>
-        {pending ? '…' : 'Add'}
+        {pending ? <Spinner /> : null}
+        {pending ? 'Adding…' : 'Add'}
       </Button>
       {state.error ? <p className="text-destructive w-full text-sm">{state.error}</p> : null}
       {state.ok ? <p className="w-full text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}

@@ -69,7 +69,10 @@ export async function ingestSearches() {
 }
 
 /** Create the draft for one enrollment's current step. Returns the message id. */
-export async function draftForEnrollment(enrollmentId: number): Promise<number | null> {
+export async function draftForEnrollment(
+  enrollmentId: number,
+  report: (event: { phase: string; detail?: string }) => void = () => {},
+): Promise<number | null> {
   // row_to_json rather than a column list: the list silently went stale when `links`
   // was added, campaign.links came back undefined, and every draft threw.
   const rows = (await db()`
@@ -110,6 +113,7 @@ export async function draftForEnrollment(enrollmentId: number): Promise<number |
   // write to this company and reuse it for every later email and every other campaign.
   if (!lead.research) {
     try {
+      report({ phase: 'Researching', detail: lead.company_name ?? lead.email })
       lead.research = await researchCompany(lead)
       await db()`update leads set research = ${lead.research} where id = ${lead.id}`
     } catch (error) {
@@ -118,6 +122,7 @@ export async function draftForEnrollment(enrollmentId: number): Promise<number |
   }
 
   const senderName = campaign.from_name || 'Norrkusten'
+  report({ phase: 'Writing to', detail: lead.full_name || lead.email })
   const draft = await draftEmail({
     lead,
     campaign,
@@ -248,13 +253,17 @@ export type CampaignPass = {
  * expensive step and only drafting uses it), then draft what is due.
  * Safe to run repeatedly — every stage skips work already done.
  */
-export async function runCampaign(campaignId: number): Promise<CampaignPass> {
+export async function runCampaign(
+  campaignId: number,
+  report: (event: { phase: string; detail?: string }) => void = () => {},
+): Promise<CampaignPass> {
   const deadline = Date.now() + PASS_BUDGET_MS
   const empty = { enrolled: 0, scored: 0, drafted: 0, failed: 0, reason: '', unscored: 0, due: 0 }
   const [campaign] = (await db()`select * from campaigns where id = ${campaignId}`) as Campaign[]
   if (!campaign) return empty
 
   // 1. Enrol anything from the source searches that is not already in.
+  report({ phase: 'Enrolling leads from the source searches' })
   let enrolled = 0
   if (campaign.source_search_ids.length) {
     const inserted = (await db()`
@@ -300,9 +309,10 @@ export async function runCampaign(campaignId: number): Promise<CampaignPass> {
        and next_send_at <= now() and score >= ${campaign.min_score}::int
      order by score desc, next_send_at limit ${DRAFT_LIMIT}`) as { id: number }[]
 
+  report({ phase: `Writing ${due.length} email${due.length === 1 ? '' : 's'}` })
   let drafted = 0
   const draftPass = await mapLimit(due, 4, deadline, async (row) => {
-    if (await draftForEnrollment(row.id)) drafted++
+    if (await draftForEnrollment(row.id, report)) drafted++
   })
   failed += draftPass.failed
   reason ||= draftPass.reason

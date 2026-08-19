@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -165,6 +166,7 @@ export function SearchForm() {
           {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
 
           <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? <Spinner /> : null}
             {pending ? 'Starting…' : 'Start search'}
           </Button>
         </form>

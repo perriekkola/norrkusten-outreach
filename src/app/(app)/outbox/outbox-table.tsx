@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Fragment, useActionState, useState } from 'react'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
+import { Spinner } from '@/components/spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -45,6 +46,7 @@ function DraftBody({ message }: { message: OutboxRow }) {
       <Textarea name="body" defaultValue={message.body} rows={12} />
       <div className="flex items-center gap-2">
         <Button type="submit" size="sm" disabled={saving}>
+          {saving ? <Spinner /> : null}
           {saving ? 'Saving…' : 'Save'}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
@@ -94,6 +96,7 @@ export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
         </span>
 
         <Button size="sm" disabled={!draftsSelected.length || approving} onClick={approve}>
+          {approving ? <Spinner /> : null}
           {approving ? 'Approving…' : `Approve${draftsSelected.length ? ` ${draftsSelected.length}` : ''}`}
         </Button>
 

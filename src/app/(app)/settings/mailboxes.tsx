@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
+import { Spinner } from '@/components/spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -90,6 +91,7 @@ function MailboxForm({ mailbox, onDone }: { mailbox?: MailboxRow; onDone: () => 
 
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={pending}>
+          {pending ? <Spinner /> : null}
           {pending ? 'Saving…' : mailbox ? 'Save' : 'Add mailbox'}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
@@ -106,6 +108,7 @@ function TestButton({ id }: { id: number }) {
     <form action={action} className="flex items-center gap-2">
       <input type="hidden" name="id" value={id} />
       <Button type="submit" size="sm" variant="outline" disabled={pending}>
+        {pending ? <Spinner /> : null}
         {pending ? 'Testing…' : 'Test'}
       </Button>
       {state.ok ? <span className="text-xs text-green-600 dark:text-green-400">{state.ok}</span> : null}

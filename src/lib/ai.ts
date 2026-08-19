@@ -310,8 +310,10 @@ const CampaignDraft = z.object({
 
 export type CampaignDraft = z.infer<typeof CampaignDraft> & { links: string[] }
 
+type Report = (event: { phase: string; detail?: string }) => void
+
 /** Reads whatever the user pasted — links get fetched, claims get checked. */
-async function readSources(brief: string, links: string[]): Promise<string> {
+async function readSources(brief: string, links: string[], report: Report): Promise<string> {
   const messages: Anthropic.MessageParam[] = [
     {
       role: 'user',
@@ -328,6 +330,8 @@ async function readSources(brief: string, links: string[]): Promise<string> {
     },
   ]
 
+  report({ phase: links.length ? 'Reading the pages you gave me' : 'Searching the web' })
+
   for (let attempt = 0; attempt < 4; attempt++) {
     const message = await anthropic().messages.create({
       model: MODEL.campaign,
@@ -339,6 +343,15 @@ async function readSources(brief: string, links: string[]): Promise<string> {
       messages,
     })
     guardRefusal(message)
+
+    // Say which page or query it actually reached for, not just that it is busy.
+    for (const block of message.content) {
+      if (block.type !== 'server_tool_use') continue
+      const input = block.input as { url?: string; query?: string }
+      if (input.url) report({ phase: 'Fetching', detail: input.url })
+      else if (input.query) report({ phase: 'Searching', detail: input.query })
+    }
+
     if (message.stop_reason !== 'pause_turn') return finalText(message.content)
     messages.push({ role: 'assistant', content: message.content })
   }
@@ -351,8 +364,11 @@ export async function draftCampaign(args: {
   links: string[]
   senderName: string
   searches: { id: number; label: string; leads: number }[]
+  report?: Report
 }): Promise<CampaignDraft> {
-  const sources = await readSources(args.brief, args.links)
+  const report = args.report ?? (() => {})
+  const sources = await readSources(args.brief, args.links, report)
+  report({ phase: 'Writing the targeting, offer and sequence' })
 
   const message = await anthropic().messages.parse({
     model: MODEL.campaign,
