@@ -13,6 +13,7 @@ import {
 import { cancelSearch, deleteSearch, refreshSearches } from '@/lib/actions'
 import { db, type Search } from '@/lib/db'
 import { ingestSearches } from '@/lib/engine'
+import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { SearchForm } from './search-form'
 import { SearchPoller } from './search-poller'
@@ -97,15 +98,29 @@ export default async function SearchesPage() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{search.imported}</TableCell>
                       <TableCell className="text-right">
-                        <form
-                          action={search.status === 'running' ? cancelSearch : deleteSearch}
-                          className="inline"
-                        >
-                          <input type="hidden" name="id" value={search.id} />
-                          <SubmitButton variant="ghost" size="sm" pendingLabel="…">
-                            {search.status === 'running' ? 'Cancel' : 'Delete'}
-                          </SubmitButton>
-                        </form>
+                        {search.status === 'running' ? (
+                          <ConfirmButton
+                            action={cancelSearch}
+                            payload={{ id: search.id }}
+                            title="Cancel this search?"
+                            description="Aborts the Apify run. Leads it already found are lost — Apify still bills for what it fetched."
+                            confirmLabel="Cancel run"
+                            pendingLabel="Cancelling…"
+                          >
+                            Cancel
+                          </ConfirmButton>
+                        ) : (
+                          <ConfirmButton
+                            action={deleteSearch}
+                            payload={{ id: search.id }}
+                            title="Delete this search?"
+                            description="Removes the search record. The leads it imported stay, but they lose their source, so campaigns pulling from this search will no longer pick them up."
+                            confirmLabel="Delete"
+                            pendingLabel="Deleting…"
+                          >
+                            Delete
+                          </ConfirmButton>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

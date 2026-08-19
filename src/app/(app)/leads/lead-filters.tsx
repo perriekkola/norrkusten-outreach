@@ -20,12 +20,10 @@ const ANY = 'any'
  * then enroll. Plain GET params so a useful slice is a shareable URL.
  */
 export function LeadFilters({
-  status,
   query,
   source,
   searches,
 }: {
-  status: string
   query: string
   source: number | null
   searches: { id: number; label: string; leads: number }[]
@@ -35,7 +33,6 @@ export function LeadFilters({
   function apply(patch: Record<string, string | null>) {
     const params = new URLSearchParams()
     const next = {
-      status: status === 'all' ? null : status,
       q: query || null,
       source: source ? String(source) : null,
       ...patch,

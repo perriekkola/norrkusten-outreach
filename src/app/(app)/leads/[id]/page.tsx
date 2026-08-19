@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { ConfirmButton } from '@/components/confirm-button'
+import { Hint } from '@/components/hint'
 import { PageHeader } from '@/components/page-header'
 import { SubmitButton } from '@/components/submit-button'
 import { Badge } from '@/components/ui/badge'
@@ -56,12 +58,16 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
         title={lead.full_name || lead.email}
         description={[lead.job_title, lead.company_name].filter(Boolean).join(' · ')}
       >
-        <form action={setLeadStatus}>
+        <form action={setLeadStatus} className="flex items-center gap-1.5">
           <input type="hidden" name="leadId" value={lead.id} />
           <input type="hidden" name="status" value="replied" />
           <SubmitButton size="sm" pendingLabel="…">
             Mark replied
           </SubmitButton>
+          <Hint>
+            Replies are detected automatically over IMAP. Use this when someone answers off-thread
+            — from a different address, or by phone. It stops every sequence this lead is in.
+          </Hint>
         </form>
       </PageHeader>
 
@@ -209,12 +215,16 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
                         step {enrollment.step + 1} · {enrollment.status}
                       </div>
                     </div>
-                    <form action={unenroll}>
-                      <input type="hidden" name="enrollmentId" value={enrollment.id} />
-                      <SubmitButton size="sm" variant="ghost" pendingLabel="…">
-                        Remove
-                      </SubmitButton>
-                    </form>
+                    <ConfirmButton
+                      action={unenroll}
+                      payload={{ enrollmentId: enrollment.id }}
+                      title="Remove from this campaign?"
+                      description="The score, the angle and any unsent draft are deleted. The lead stays in the pool."
+                      confirmLabel="Remove"
+                      pendingLabel="Removing…"
+                    >
+                      Remove
+                    </ConfirmButton>
                   </div>
                 ))
               )}

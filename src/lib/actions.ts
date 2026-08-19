@@ -276,6 +276,8 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
     icp: String(formData.get('icp') ?? ''),
     sources: formData.getAll('source_search_ids').map(Number).filter(Number.isFinite),
     minScore: Math.max(0, Math.min(100, Number(formData.get('min_score')) || 0)),
+    guidelines: String(formData.get('guidelines') ?? ''),
+    linkUrl: String(formData.get('link_url') ?? '').trim(),
     offer: String(formData.get('offer') ?? ''),
     language: String(formData.get('language') ?? 'sv'),
     from_name: String(formData.get('from_name') ?? '') || null,
@@ -288,6 +290,7 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
       update campaigns
          set name = ${values.name}, icp = ${values.icp}, offer = ${values.offer},
              source_search_ids = ${values.sources}::int[], min_score = ${values.minScore},
+             guidelines = ${values.guidelines}, link_url = ${values.linkUrl},
              language = ${values.language},
              from_name = ${values.from_name}, auto_send = ${values.auto_send},
              steps = ${values.steps}::jsonb
@@ -298,10 +301,11 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
 
   const [created] = (await db()`
     insert into campaigns
-      (name, icp, offer, source_search_ids, min_score, language, from_name, auto_send, steps)
+      (name, icp, offer, source_search_ids, min_score, guidelines, link_url, language,
+       from_name, auto_send, steps)
     values (${values.name}, ${values.icp}, ${values.offer}, ${values.sources}::int[],
-            ${values.minScore}, ${values.language}, ${values.from_name}, ${values.auto_send},
-            ${values.steps}::jsonb)
+            ${values.minScore}, ${values.guidelines}, ${values.linkUrl}, ${values.language},
+            ${values.from_name}, ${values.auto_send}, ${values.steps}::jsonb)
     returning id`) as { id: number }[]
   redirect(`/campaigns/${created.id}`)
 }

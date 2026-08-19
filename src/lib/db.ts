@@ -81,6 +81,10 @@ export type Campaign = {
   source_search_ids: number[]
   /** Leads below this never get drafted or sent. */
   min_score: number
+  /** Extra drafting rules for this campaign — tone, what to ask for, what to avoid. */
+  guidelines: string
+  /** The page every email in this campaign should point at. */
+  link_url: string
   steps: CampaignStep[]
   status: 'active' | 'paused'
   created_at: string
@@ -98,6 +102,8 @@ export type Message = {
   error: string | null
   sent_at: string | null
   opened_at: string | null
+  click_count: number
+  clicked_at: string | null
   replied_at: string | null
   created_at: string
 }

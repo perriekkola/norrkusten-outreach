@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useActionState, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -80,26 +81,33 @@ export function DraftCard({ message }: { message: OutboxRow }) {
               </Hint>
             </>
           ) : null}
-          <Button
-            size="sm"
+          <ConfirmButton
+            action={sendNow}
+            payload={{ messageId: message.id }}
             variant="outline"
             disabled={!!busy}
-            onClick={() => act('send', sendNow)}
+            title="Send this email now?"
+            description={`This delivers to ${message.email} immediately. Email cannot be recalled — read the draft once more before confirming.`}
+            confirmLabel="Send"
+            pendingLabel="Sending…"
           >
-            {busy === 'send' ? 'Sending…' : 'Send now'}
-          </Button>
+            Send now
+          </ConfirmButton>
           <Button size="sm" variant="ghost" onClick={() => setEditing((value) => !value)}>
             {editing ? 'Close editor' : 'Edit'}
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
+          <ConfirmButton
+            action={discardMessages}
+            payload={{ messageId: message.id }}
             className="text-destructive ml-auto"
             disabled={!!busy}
-            onClick={() => act('discard', discardMessages)}
+            title="Discard this draft?"
+            description="The draft is dropped and this step is skipped for this lead. The sequence carries on to the next step at its scheduled time."
+            confirmLabel="Discard"
+            pendingLabel="Discarding…"
           >
-            {busy === 'discard' ? 'Discarding…' : 'Discard'}
-          </Button>
+            Discard
+          </ConfirmButton>
         </div>
       </CardContent>
     </Card>

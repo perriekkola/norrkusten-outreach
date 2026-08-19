@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { deleteCampaign, dropWeak, setCampaignStatus, unenroll } from '@/lib/actions'
+import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { RunButton } from './run-button'
 import { db, type Campaign } from '@/lib/db'
@@ -77,24 +78,26 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
         <RunButton campaignId={campaign.id} disabled={!campaign.icp.trim()} />
-        <form action={dropWeak} className="flex items-center gap-1.5">
-          <input type="hidden" name="campaignId" value={campaign.id} />
-          <SubmitButton
-            size="sm"
-            variant="ghost"
-            pendingLabel="Removing…"
+        <div className="flex items-center gap-1.5">
+          <ConfirmButton
+            action={dropWeak}
+            payload={{ campaignId: campaign.id }}
             disabled={belowFloor === 0}
+            title={`Remove ${belowFloor} low-scoring lead${belowFloor === 1 ? '' : 's'}?`}
+            description={`Enrollments scoring under ${campaign.min_score} are removed from this campaign. The leads themselves stay in the pool, and anyone already emailed is kept.`}
+            confirmLabel="Remove"
+            pendingLabel="Removing…"
           >
             {belowFloor === 0
               ? `Nobody below ${campaign.min_score}`
               : `Drop ${belowFloor} below ${campaign.min_score}`}
-          </SubmitButton>
+          </ConfirmButton>
           <Hint>
             Permanently removes enrollments scoring under the campaign&apos;s minimum, so they
             stop cluttering the list. Anyone already emailed is kept. Raise the minimum in
             Settings if you want to cut more.
           </Hint>
-        </form>
+        </div>
         <form action={setCampaignStatus}>
           <input type="hidden" name="id" value={campaign.id} />
           <input
@@ -185,12 +188,16 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                             : '—'}
                         </TableCell>
                         <TableCell className="text-right">
-                          <form action={unenroll}>
-                            <input type="hidden" name="enrollmentId" value={row.id} />
-                            <SubmitButton size="sm" variant="ghost" pendingLabel="…">
-                              Remove
-                            </SubmitButton>
-                          </form>
+                          <ConfirmButton
+                            action={unenroll}
+                            payload={{ enrollmentId: row.id }}
+                            title="Remove this lead from the campaign?"
+                            description="The score, the angle and any unsent draft are deleted. The lead stays in the pool and can be enrolled again, but it would be scored from scratch."
+                            confirmLabel="Remove"
+                            pendingLabel="Removing…"
+                          >
+                            Remove
+                          </ConfirmButton>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -208,12 +215,17 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
               <CardTitle className="text-destructive text-base">Danger zone</CardTitle>
             </CardHeader>
             <CardContent>
-              <form action={deleteCampaign}>
-                <input type="hidden" name="id" value={campaign.id} />
-                <SubmitButton variant="destructive" size="sm" pendingLabel="Deleting…">
-                  Delete campaign and its enrollments
-                </SubmitButton>
-              </form>
+              <ConfirmButton
+                action={deleteCampaign}
+                payload={{ id: campaign.id }}
+                variant="destructive"
+                title={`Delete "${campaign.name}"?`}
+                description={`This removes the campaign, all ${enrollments.length} enrollments with their scores, and every draft. Emails already sent stay on the leads. The leads themselves are not touched. This cannot be undone.`}
+                confirmLabel="Delete campaign"
+                pendingLabel="Deleting…"
+              >
+                Delete campaign and its enrollments
+              </ConfirmButton>
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,11 +1,22 @@
+// Bare URLs in the plain-text body. Trailing punctuation is excluded so a sentence-final
+// full stop or a closing bracket does not end up inside the href.
+const URL_PATTERN = /https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g
+
 /** Plain text in, safe HTML out — Claude writes prose, not markup. Pure; unit-tested. */
-export function textToHtml(body: string, pixelUrl?: string) {
+export function textToHtml(body: string, pixelUrl?: string, linkUrl?: (url: string) => string) {
   const escaped = body
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-  const paragraphs = escaped
+  const linked = linkUrl
+    ? escaped.replace(URL_PATTERN, (url) => {
+        const href = linkUrl(url).replace(/&/g, '&amp;')
+        return `<a href="${href}" style="color:#2249ff">${url}</a>`
+      })
+    : escaped
+
+  const paragraphs = linked
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 16px">${p.replace(/\n/g, '<br />')}</p>`)
     .join('')

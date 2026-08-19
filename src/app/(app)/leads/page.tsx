@@ -1,30 +1,32 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { db, type Campaign, type Lead } from '@/lib/db'
+
+export type LeadRow = Lead & { contacted: boolean; replied: boolean }
 import { LeadFilters } from './lead-filters'
 import { LeadsTable } from './leads-table'
 
-const STATUSES = ['all', 'new', 'contacted', 'replied', 'won', 'lost', 'rejected']
-
 export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
   const params = await searchParams
-  const status = typeof params.status === 'string' ? params.status : 'all'
   const query = typeof params.q === 'string' ? params.q.trim() : ''
   const source = Number(params.source) || null
 
   const leads = (await db()`
-    select * from leads
-     where (${status} = 'all' or status = ${status})
-       and (${source}::int is null or search_id = ${source}::int)
+    select l.*,
+           exists (select 1 from messages m
+                    where m.lead_id = l.id and m.status = 'sent') as contacted,
+           exists (select 1 from messages m
+                    where m.lead_id = l.id and m.replied_at is not null) as replied
+      from leads l
+     where (${source}::int is null or search_id = ${source}::int)
        and (${query} = '' or
             full_name ilike ${'%' + query + '%'} or
             email ilike ${'%' + query + '%'} or
             company_name ilike ${'%' + query + '%'} or
             job_title ilike ${'%' + query + '%'})
      order by created_at desc
-     limit 300`) as Lead[]
+     limit 300`) as LeadRow[]
 
   const campaigns = (await db()`
     select id, name from campaigns where status = 'active' order by name`) as Pick<
@@ -45,18 +47,7 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
         description="The raw pool. Filter by source, then enroll into a campaign — scoring happens there."
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {STATUSES.map((value) => (
-          <Link key={value} href={`/leads${value === 'all' ? '' : `?status=${value}`}`}>
-            <Badge variant={status === value ? 'default' : 'outline'} className="capitalize">
-              {value}
-            </Badge>
-          </Link>
-        ))}
-      </div>
-
       <LeadFilters
-        status={status}
         query={query}
         source={source}
         searches={searches}

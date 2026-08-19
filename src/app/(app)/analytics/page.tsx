@@ -18,6 +18,7 @@ type Funnel = {
   enrolled: number
   sent: number
   opened: number
+  clicked: number
   replied: number
   bounced: number
 }
@@ -40,15 +41,17 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
   const from = typeof params.from === 'string' ? params.from : ''
   const to = typeof params.to === 'string' ? params.to : ''
   // Inclusive end date: `< to + 1 day` rather than `<= to`, which would drop same-day rows.
-  const until = to ? new Date(Date.parse(to) + 86_400_000).toISOString().slice(0, 10) : ''
+  // Null, not '': Postgres folds `''::date` before the OR guard can short-circuit and errors.
+  const fromDate = from || null
+  const untilDate = to ? new Date(Date.parse(to) + 86_400_000).toISOString().slice(0, 10) : null
 
   const [funnel] = (await db()`
     with scoped as (
       select m.*, e.campaign_id, e.score, e.lead_id as enrolled_lead
         from messages m join enrollments e on e.id = m.enrollment_id
        where (${campaign}::int is null or e.campaign_id = ${campaign}::int)
-         and (${from} = '' or m.sent_at >= ${from}::date)
-         and (${until} = '' or m.sent_at < ${until}::date)
+         and (${fromDate}::date is null or m.sent_at >= ${fromDate}::date)
+         and (${untilDate}::date is null or m.sent_at < ${untilDate}::date)
     ),
     pool as (
       select e.* from enrollments e
@@ -60,12 +63,11 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
       (select count(distinct lead_id) from pool)::int                                  as enrolled,
       (select count(*) from scoped where status = 'sent')::int                         as sent,
       (select count(*) from scoped where opened_at is not null)::int                   as opened,
+      (select count(*) from scoped where clicked_at is not null)::int                  as clicked,
       (select count(*) from scoped where replied_at is not null)::int                  as replied,
       (select count(*) from pool where status = 'bounced')::int                        as bounced
   `) as Funnel[]
 
-  const start = from || null
-  const end = to || null
   const activity = (await db()`
     with m as (
       select msg.* from messages msg join enrollments e on e.id = msg.enrollment_id
@@ -79,8 +81,8 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
       (select count(*) from m
         where replied_at >= d and replied_at < d + interval '1 day')::int as replied
       from generate_series(
-             coalesce(${start}::date, current_date - 29),
-             coalesce(${end}::date, current_date),
+             coalesce(${fromDate}::date, current_date - 29),
+             coalesce(${to || null}::date, current_date),
              interval '1 day') d
      order by d`) as ActivityPoint[]
 
@@ -106,6 +108,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
     { label: 'Enrolled', value: funnel.enrolled, rate: percent(funnel.enrolled, funnel.qualified) },
     { label: 'Emails sent', value: funnel.sent, rate: null },
     { label: 'Opened', value: funnel.opened, rate: percent(funnel.opened, funnel.sent) },
+    { label: 'Clicked', value: funnel.clicked, rate: percent(funnel.clicked, funnel.sent) },
     { label: 'Replied', value: funnel.replied, rate: percent(funnel.replied, funnel.sent) },
   ]
 
@@ -115,7 +118,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
 
       <AnalyticsFilters campaign={campaign} from={from} to={to} campaigns={allCampaigns} />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
         {STAGES.map((stage) => (
           <Card key={stage.label}>
             <CardContent className="py-4">
@@ -155,6 +158,11 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
               <strong className="text-foreground">Opens</strong> use a tracking pixel. Apple Mail
               Privacy Protection and Gmail image proxies pre-load images, so treat open rate as a
               trend, not a headcount.
+            </p>
+            <p>
+              <strong className="text-foreground">Clicks</strong> are exact — links in sent mail
+              are rewritten through a signed redirect, so a click is a real human action rather
+              than a proxy prefetch. Better signal than opens.
             </p>
             <p>
               <strong className="text-foreground">Replies</strong> are matched over IMAP on the

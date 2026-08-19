@@ -17,6 +17,8 @@ export type OutboxRow = {
   step: number
   sent_at: string | null
   opened_at: string | null
+  clicked_at: string | null
+  click_count: number
   replied_at: string | null
   open_count: number
   error: string | null
@@ -29,7 +31,7 @@ export type OutboxRow = {
 
 const SELECT = `
   select m.id, m.subject, m.body, m.status, m.step, m.sent_at, m.opened_at, m.replied_at,
-         m.open_count, m.error, l.id as lead_id, l.full_name as lead_name, l.email,
+         m.open_count, m.clicked_at, m.click_count, m.error, l.id as lead_id, l.full_name as lead_name, l.email,
          l.company_name, c.name as campaign_name
     from messages m
     join leads l on l.id = m.lead_id
@@ -112,6 +114,11 @@ export default async function OutboxPage() {
                     </div>
                     <div className="flex gap-2">
                       {message.replied_at ? <Badge>replied</Badge> : null}
+                      {message.clicked_at ? (
+                        <Badge>
+                          clicked{message.click_count > 1 ? ` ×${message.click_count}` : ''}
+                        </Badge>
+                      ) : null}
                       {message.opened_at ? (
                         <Badge variant="secondary">
                           opened{message.open_count > 1 ? ` ×${message.open_count}` : ''}

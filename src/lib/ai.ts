@@ -146,7 +146,9 @@ export async function researchCompany(lead: Lead): Promise<string> {
 /* -------------------------------------------------------------------- draft */
 
 const Draft = z.object({
-  subject: z.string().describe('Short, specific, lowercase-ish. No emoji, no "Re:" fakery.'),
+  subject: z
+    .string()
+    .describe('Sentence case, like a human typed it. Short and specific. No emoji, no fake "Re:".'),
   body: z.string().describe('Plain text email body including greeting and sign-off. No markdown.'),
 })
 
@@ -164,6 +166,7 @@ export async function draftEmail(args: {
   const { lead, campaign, step, senderName, angle, previous } = args
   const goal = campaign.steps[step]?.goal ?? 'A brief, polite follow-up.'
   const language = campaign.language === 'sv' ? 'Swedish' : campaign.language
+  const guidelines = campaign.guidelines ?? ''
 
   const thread = previous.length
     ? previous
@@ -175,19 +178,38 @@ export async function draftEmail(args: {
     model: MODEL.draft,
     max_tokens: 8000,
     output_config: { format: zodOutputFormat(Draft) },
-    system:
-      `Write cold outreach emails in ${language} for ${senderName}, who sells e-learning courses. ` +
-      'Rules: under 120 words. No flattery, no "I hope this email finds you well", no buzzwords, ' +
-      'no fake urgency. Reference something concrete and true about the recipient or their ' +
-      'company from the material provided — never invent facts, and if the research is thin, ' +
-      'keep it general rather than fabricating. One clear, low-friction ask. Sign off as ' +
-      `${senderName}. Plain text only.`,
+    system: [
+      `You write cold outreach emails in ${language}, signed by ${senderName}.`,
+      '',
+      'Hard rules:',
+      '- Under 120 words. Plain text, no markdown.',
+      '- Never tell the recipient what their own company does. They know. Research and the',
+      '  scraped description exist so YOU can judge what is relevant to them — they are not',
+      '  material to recite back. "Ni konstruerar X" as an opening line is the single worst',
+      '  thing you can write.',
+      '- Open with the reason this matters to them, not with who we are or who they are.',
+      '- At most one specific detail about them, and only if it changes what you are saying.',
+      '  Weave it in mid-sentence; never as the opening clause.',
+      '- Never invent facts. If the research is thin, write a shorter, more general email',
+      '  rather than filling space with guesses.',
+      '- No flattery, no "hoppas det här mejlet finner dig väl", no buzzwords, no fake urgency,',
+      '  no "jag såg att...", no company boilerplate, no phone-number sign-off.',
+      '- Exactly one ask, and it is whatever the goal for this email says. Do not substitute a',
+      '  meeting request for it.',
+      `- Sign off as ${senderName} and nothing else.`,
+      guidelines.trim() ? `\nCampaign-specific rules, these override the defaults:\n${guidelines.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
     messages: [
       {
         role: 'user',
         content: [
           `What we sell:\n${campaign.offer}`,
           `Goal of this email (step ${step + 1} of ${campaign.steps.length}):\n${goal}`,
+          campaign.link_url
+            ? `Include this link exactly once, as a bare URL on its own line:\n${campaign.link_url}`
+            : 'There is no link for this campaign — do not invent a URL.',
           `Lead:\n${leadContext(lead)}`,
           `Qualification angle for this campaign: ${angle ?? '—'}`,
           `Company research:\n${lead.research ?? '(none)'}`,

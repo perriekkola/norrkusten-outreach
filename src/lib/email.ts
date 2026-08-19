@@ -1,7 +1,7 @@
 import 'server-only'
 import nodemailer from 'nodemailer'
 import { textToHtml } from './format'
-import { appUrl, trackToken } from './tracking'
+import { appUrl, clickToken, trackToken } from './tracking'
 
 let transport: nodemailer.Transporter | null = null
 
@@ -38,6 +38,15 @@ function pixelUrl(messageId?: number) {
   return messageId && base ? `${base}/api/t/${trackToken(messageId)}` : undefined
 }
 
+/** Routes links through the click endpoint. Only in the HTML part — the plain-text
+ *  alternative keeps the real URL, so text-only clients get something readable. */
+function linkRewriter(messageId?: number) {
+  const base = appUrl()
+  if (!messageId || !base) return undefined
+  return (url: string) =>
+    `${base}/api/c/${clickToken(messageId, url)}?u=${encodeURIComponent(url)}`
+}
+
 export async function sendEmail(args: {
   to: string
   subject: string
@@ -55,7 +64,7 @@ export async function sendEmail(args: {
     replyTo: process.env.REPLY_TO_EMAIL || undefined,
     subject: args.subject,
     text: args.body,
-    html: textToHtml(args.body, pixelUrl(args.messageId)),
+    html: textToHtml(args.body, pixelUrl(args.messageId), linkRewriter(args.messageId)),
     headers: args.headers,
   })
 

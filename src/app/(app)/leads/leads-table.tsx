@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,14 +23,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deleteLeads, enrollLeads, setLeadStatus } from '@/lib/actions'
-import type { Campaign, Lead } from '@/lib/db'
+import { deleteLeads, enrollLeads } from '@/lib/actions'
+import type { Campaign } from '@/lib/db'
+import type { LeadRow } from './page'
 
 export function LeadsTable({
   leads,
   campaigns,
 }: {
-  leads: Lead[]
+  leads: LeadRow[]
   campaigns: Pick<Campaign, 'id' | 'name'>[]
 }) {
   const [selected, setSelected] = useState<number[]>([])
@@ -94,37 +96,18 @@ export function LeadsTable({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline" disabled={!selected.length || !!busy}>
-              {busy === 'status' ? 'Updating…' : 'Set status'}
-              <ChevronDown className="ml-1 size-3.5 opacity-60" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {['new', 'contacted', 'replied', 'won', 'lost', 'rejected'].map((status) => (
-              <DropdownMenuItem
-                key={status}
-                className="capitalize"
-                onSelect={() => run('status', setLeadStatus, { status })}
-              >
-                {status}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-destructive ml-auto"
+        <ConfirmButton
+          action={deleteLeads}
+          payload={{ leadId: selected }}
           disabled={!selected.length || !!busy}
-          onClick={() => {
-            if (confirm(`Delete ${selected.length} lead(s)?`)) run('delete', deleteLeads)
-          }}
+          className="text-destructive ml-auto"
+          title={`Delete ${selected.length} lead${selected.length === 1 ? '' : 's'}?`}
+          description="This removes the leads and every enrollment, score and draft attached to them. Sent emails stay in the record. It cannot be undone — re-running the search would re-import them as new."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
         >
           Delete
-        </Button>
+        </ConfirmButton>
       </div>
 
       <Card className="py-0">
@@ -142,7 +125,7 @@ export function LeadsTable({
                 </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead className="w-24">Status</TableHead>
+                <TableHead className="w-28">Outreach</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -169,9 +152,15 @@ export function LeadsTable({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {lead.status}
-                    </Badge>
+                    {lead.replied ? (
+                      <Badge>Replied</Badge>
+                    ) : lead.contacted ? (
+                      <Badge variant="secondary">Contacted</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-muted-foreground">
+                        Not contacted
+                      </Badge>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

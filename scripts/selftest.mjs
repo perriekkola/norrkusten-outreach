@@ -131,6 +131,16 @@ assert.deepEqual(
   'due list is best-first and excludes the below-floor lead',
 )
 
+// Optional date params go in as null, never ''. On Neon, `$1 = '' or col >= $1::date`
+// fails with 22007 because ''::date is folded before the OR short-circuits. PGlite does
+// not reproduce that, so this only pins the shape that works — the guard is the pattern
+// itself, not this assertion.
+assert.equal(
+  (await q(`select 1 as ok where ($1::date is null or now() >= $1::date)`, [null])).length,
+  1,
+  'null date param means unbounded',
+)
+
 // Analytics date range: `to` is inclusive, so the bound is `< to + 1 day`.
 await db.exec(`update messages set sent_at = date '2026-03-10' + interval '20 hours' where id = 1`)
 assert.equal(

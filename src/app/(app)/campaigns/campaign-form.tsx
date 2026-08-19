@@ -157,6 +157,45 @@ export function CampaignForm({
         />
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="link_url" className="flex items-center gap-1.5">
+          Link to include
+          <Hint>
+            Every email points here — the course page, a booking page, whatever this campaign is
+            driving to. Claude is told to include it once, as a bare URL on its own line. Links
+            in sent mail are rewritten through a tracker so clicks show up in Analytics.
+          </Hint>
+        </Label>
+        <Input
+          id="link_url"
+          name="link_url"
+          type="url"
+          defaultValue={campaign?.link_url}
+          placeholder="https://norrkusten.se/kurser/..."
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="guidelines" className="flex items-center gap-1.5">
+          How the emails should read
+          <Hint>
+            Campaign-specific rules that override the defaults — what to ask for, tone, phrases
+            to avoid. This is the dial to turn when the drafts come out wrong. Example: &ldquo;Ask
+            them to read the course page and reply with questions. Never propose a meeting.&rdquo;
+          </Hint>
+        </Label>
+        <Textarea
+          id="guidelines"
+          name="guidelines"
+          rows={5}
+          defaultValue={campaign?.guidelines}
+          placeholder={
+            'Be be konkret och kort. Avsluta med att be dem läsa kurssidan och svara om de har ' +
+            'frågor — föreslå aldrig ett möte.'
+          }
+        />
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="language" className="flex items-center gap-1.5">

@@ -57,6 +57,8 @@ create table if not exists campaigns (
   offer      text not null default '',
   source_search_ids int[] not null default '{}',-- searches this campaign pulls leads from
   min_score  int not null default 50,           -- below this, never drafted or sent
+  guidelines text not null default '',          -- how this campaign's emails should read
+  link_url   text not null default '',          -- the page each email should point at
   language   text not null default 'sv',
   from_name  text,
   auto_send  boolean not null default false,
@@ -92,6 +94,8 @@ create table if not exists messages (
   error         text,
   sent_at       timestamptz,
   opened_at     timestamptz,
+  click_count   int not null default 0,
+  clicked_at    timestamptz,
   replied_at    timestamptz,
   created_at    timestamptz not null default now(),
   unique (enrollment_id, step)
@@ -124,3 +128,9 @@ create index if not exists idx_enroll_score on enrollments(campaign_id, score de
 -- so enrolling, scoring and researching stop being manual steps.
 alter table campaigns add column if not exists source_search_ids int[] not null default '{}';
 alter table campaigns add column if not exists min_score int not null default 50;
+
+-- Per-campaign control over how the email is written, and what it links to.
+alter table campaigns add column if not exists guidelines text not null default '';
+alter table campaigns add column if not exists link_url   text not null default '';
+alter table messages  add column if not exists click_count int not null default 0;
+alter table messages  add column if not exists clicked_at  timestamptz;
