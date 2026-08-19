@@ -20,7 +20,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { approveMessages, discardMessages, sendNow, updateDraft } from '@/lib/actions'
+import {
+  approveMessages,
+  discardMessages,
+  regenerateDrafts,
+  sendNow,
+  updateDraft,
+} from '@/lib/actions'
 import { cn } from '@/lib/utils'
 import type { OutboxRow } from './page'
 
@@ -62,6 +68,7 @@ export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
   const [selected, setSelected] = useState<number[]>([])
   const [expanded, setExpanded] = useState<number | null>(null)
   const [approving, setApproving] = useState(false)
+  const [rewrite, rewriteAction, rewriting] = useActionState(regenerateDrafts, {})
 
   const toggle = (id: number) =>
     setSelected((current) =>
@@ -100,6 +107,26 @@ export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
           {approving ? 'Approving…' : `Approve${draftsSelected.length ? ` ${draftsSelected.length}` : ''}`}
         </Button>
 
+        <form action={rewriteAction} className="flex items-center gap-1.5">
+          {selected.map((id) => (
+            <input key={id} type="hidden" name="messageId" value={id} />
+          ))}
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={!selected.length || rewriting}
+          >
+            {rewriting ? <Spinner /> : null}
+            {rewriting ? 'Rewriting…' : 'Rewrite'}
+          </Button>
+          <Hint>
+            Throws these drafts away and writes them again from the campaign&apos;s current
+            wording. Changing a guideline or a step goal never touches drafts that already exist,
+            so this is how you apply an edit to work already queued. Ten at a time.
+          </Hint>
+        </form>
+
         <ConfirmButton
           action={sendNow}
           payload={{ messageId: selected }}
@@ -126,6 +153,9 @@ export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
           Discard
         </ConfirmButton>
       </div>
+
+      {rewrite.ok ? <p className="text-xs text-green-600 dark:text-green-400">{rewrite.ok}</p> : null}
+      {rewrite.error ? <p className="text-destructive text-xs">{rewrite.error}</p> : null}
 
       <Card className="py-0">
         <CardContent className="p-0">

@@ -141,6 +141,27 @@ assert.deepEqual(
   'only the unresearched lead would trigger a fetch',
 )
 
+// Rewriting drops unsent drafts so they can be written again; sent mail is untouchable.
+await db.exec(`
+  insert into messages (id, enrollment_id, lead_id, step, subject, body, status)
+  values (90, 1, 1, 1, 'Draft', 'Body', 'draft'),
+         (91, 1, 1, 2, 'Skipped', 'Body', 'skipped');
+`)
+assert.deepEqual(
+  await q(
+    `select id from messages where id = any($1::int[]) and status <> 'sent' order by id`,
+    [[1, 90, 91]],
+  ),
+  [{ id: 90 }, { id: 91 }],
+  'a rewrite targets drafts and skipped steps, never the sent message',
+)
+await db.query(`delete from messages where id = any($1::int[]) and status <> 'sent'`, [[1, 90, 91]])
+assert.deepEqual(
+  await q(`select id from messages order by id`),
+  [{ id: 1 }],
+  'only the sent message survives a rewrite',
+)
+
 // Sending walks the score order and never touches anyone below the campaign floor.
 await db.exec(`
   insert into leads (id, email, full_name) values (3, 'e@f.se', 'E F'), (4, 'g@h.se', 'G H');

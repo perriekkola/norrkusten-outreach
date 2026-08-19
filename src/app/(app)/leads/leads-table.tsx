@@ -69,8 +69,9 @@ export function LeadsTable({
         <span className="text-muted-foreground flex items-center gap-1.5 px-2 text-sm">
           {selected.length ? `${selected.length} selected` : 'Select leads to act on them'}
           <Hint>
-            This is the raw pool of everything scraped. Scoring and emailing happen inside a
-            campaign, so a lead here is not contacted until it is enrolled somewhere.
+            The raw pool of everything scraped. Campaigns normally pull their own leads from the
+            searches ticked in their settings, so you rarely need this page — it is for adding a
+            hand-picked subset to a campaign that would not otherwise take them.
           </Hint>
         </span>
         {/* Action menus, not form inputs — a <select> that fires on change is the wrong control. */}
@@ -82,7 +83,7 @@ export function LeadsTable({
               disabled={!selected.length || !!busy || campaigns.length === 0}
             >
               {busy === 'enroll' ? <Spinner /> : null}
-              {busy === 'enroll' ? 'Enrolling…' : 'Enroll in campaign'}
+              {busy === 'enroll' ? 'Adding…' : 'Add to campaign'}
               <ChevronDown className="ml-1 size-3.5 opacity-60" />
             </Button>
           </DropdownMenuTrigger>

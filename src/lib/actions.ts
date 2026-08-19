@@ -19,6 +19,9 @@ import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
 type State = { error?: string; ok?: string }
 
+/** Rewriting researches and writes per lead, so keep a pass inside the function timeout. */
+const REWRITE_BATCH = 10
+
 const list = (value: FormDataEntryValue | null) =>
   String(value ?? '')
     .split(/[\n,]/)
@@ -429,6 +432,49 @@ export async function sendNow(formData: FormData) {
     }
   }
   refresh()
+}
+
+/**
+ * Throws away unsent drafts and writes them again from the campaign's current
+ * settings. Editing guidelines or a step goal does not touch drafts that already
+ * exist, and draftForEnrollment refuses to overwrite one, so this is the only way
+ * to see a wording change applied to work already queued.
+ */
+export async function regenerateDrafts(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  const ids = formData.getAll('messageId').map(Number).filter(Number.isFinite)
+  if (!ids.length) return { error: 'Nothing selected.' }
+
+  const targets = (await db()`
+    select distinct enrollment_id from messages
+     where id = any(${ids}::int[]) and status <> 'sent'
+     order by enrollment_id limit ${REWRITE_BATCH}`) as { enrollment_id: number }[]
+
+  if (!targets.length) return { error: 'Those are already sent — they cannot be rewritten.' }
+
+  await db()`
+    delete from messages
+     where enrollment_id = any(${targets.map((t) => t.enrollment_id)}::int[])
+       and status <> 'sent'`
+
+  let rewritten = 0
+  let failed = 0
+  let reason = ''
+  for (const target of targets) {
+    try {
+      if (await draftForEnrollment(target.enrollment_id)) rewritten++
+    } catch (error) {
+      failed++
+      if (!reason) reason = describeApiError(error)
+      console.error('rewrite failed', target.enrollment_id, error)
+    }
+  }
+  refresh()
+
+  const left = ids.length - targets.length
+  return failed
+    ? { error: `Rewrote ${rewritten}, ${failed} failed: ${reason}` }
+    : { ok: `Rewrote ${rewritten}.${left > 0 ? ` ${left} left — press again.` : ''}` }
 }
 
 export async function discardMessages(formData: FormData) {
