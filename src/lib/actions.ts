@@ -13,7 +13,7 @@ import {
   userCount,
 } from './auth'
 import { db, jsonb, setSetting, type CampaignStep, type Mailbox } from './db'
-import { forgetMailbox, verifyMailbox } from './email'
+import { forgetMailbox, sendEmail, verifyMailbox } from './email'
 import { encrypt } from './secrets'
 import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
@@ -475,6 +475,42 @@ export async function regenerateDrafts(_prev: State, formData: FormData): Promis
   return failed
     ? { error: `Rewrote ${rewritten}, ${failed} failed: ${reason}` }
     : { ok: `Rewrote ${rewritten}.${left > 0 ? ` ${left} left — press again.` : ''}` }
+}
+
+/**
+ * Sends a draft to an address of your choosing so you can see it in a real client.
+ * Deliberately not tracked: no pixel, no rewritten links, no sent_at — a test must
+ * not show up as an open, a click, or a delivery to the lead.
+ */
+export async function sendTestEmail(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  const to = String(formData.get('to') ?? '').trim()
+  if (!to.includes('@')) return { error: 'Enter an address to send the test to.' }
+
+  const [message] = (await db()`
+    select m.subject, m.body, c.mailbox_id
+      from messages m
+      join enrollments e on e.id = m.enrollment_id
+      join campaigns c on c.id = e.campaign_id
+     where m.id = ${Number(formData.get('id'))}`) as {
+    subject: string
+    body: string
+    mailbox_id: number | null
+  }[]
+  if (!message) return { error: 'Draft not found.' }
+
+  try {
+    const sent = await sendEmail({
+      to,
+      subject: `[TEST] ${message.subject}`,
+      body: message.body,
+      mailboxId: message.mailbox_id,
+    })
+    await setSetting('test_email', to)
+    return { ok: `Sent to ${to} from ${sent.mailbox}.` }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 export async function discardMessages(formData: FormData) {

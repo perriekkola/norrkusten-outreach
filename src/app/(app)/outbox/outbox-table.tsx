@@ -25,10 +25,39 @@ import {
   discardMessages,
   regenerateDrafts,
   sendNow,
+  sendTestEmail,
   updateDraft,
 } from '@/lib/actions'
 import { cn } from '@/lib/utils'
 import type { OutboxRow } from './page'
+
+function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: string }) {
+  const [state, action, pending] = useActionState(sendTestEmail, {})
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 border-t pt-3">
+      <input type="hidden" name="id" value={message.id} />
+      <Input
+        name="to"
+        type="email"
+        defaultValue={defaultTo}
+        placeholder="you@norrkusten.se"
+        className="w-56"
+      />
+      <Button type="submit" size="sm" variant="outline" disabled={pending}>
+        {pending ? <Spinner /> : null}
+        {pending ? 'Sending…' : 'Send test'}
+      </Button>
+      <Hint>
+        Sends this exact draft to an address of your choosing, subject prefixed with [TEST], from
+        the campaign&apos;s mailbox. Untracked and not recorded — no pixel, no rewritten links,
+        and the lead is not marked as contacted.
+      </Hint>
+      {state.ok ? <span className="text-xs text-green-600 dark:text-green-400">{state.ok}</span> : null}
+      {state.error ? <span className="text-destructive text-xs">{state.error}</span> : null}
+    </form>
+  )
+}
 
 function DraftBody({ message }: { message: OutboxRow }) {
   const [editing, setEditing] = useState(false)
@@ -64,7 +93,13 @@ function DraftBody({ message }: { message: OutboxRow }) {
   )
 }
 
-export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
+export function OutboxTable({
+  messages,
+  testEmail,
+}: {
+  messages: OutboxRow[]
+  testEmail: string
+}) {
   const [selected, setSelected] = useState<number[]>([])
   const [expanded, setExpanded] = useState<number | null>(null)
   const [approving, setApproving] = useState(false)
@@ -236,6 +271,7 @@ export function OutboxTable({ messages }: { messages: OutboxRow[] }) {
                             <div className="mt-1 font-medium">{message.subject}</div>
                           </div>
                           <DraftBody message={message} />
+                          <TestSend message={message} defaultTo={testEmail} />
                         </div>
                       </TableCell>
                     </TableRow>

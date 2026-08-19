@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DraftButton } from './draft-button'
-import { db } from '@/lib/db'
+import { db, getSetting } from '@/lib/db'
 import { OutboxTable } from './outbox-table'
 
 export type OutboxRow = {
@@ -41,6 +41,8 @@ export default async function OutboxPage() {
     `${SELECT} where m.status in ('draft','approved') order by m.created_at limit 200`,
   )) as OutboxRow[]
 
+  const testEmail = await getSetting('test_email')
+
   const sent = (await db().query(
     `${SELECT} where m.status in ('sent','failed') order by m.sent_at desc nulls last limit 100`,
   )) as OutboxRow[]
@@ -72,7 +74,7 @@ export default async function OutboxPage() {
               </CardContent>
             </Card>
           ) : (
-            <OutboxTable messages={pending} />
+            <OutboxTable messages={pending} testEmail={testEmail} />
           )}
         </TabsContent>
 
