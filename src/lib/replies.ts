@@ -1,6 +1,7 @@
 import 'server-only'
 import { ImapFlow } from 'imapflow'
-import { db } from './db'
+import { db, type Mailbox } from './db'
+import { decrypt } from './secrets'
 
 /**
  * Reads the mailbox over IMAP and matches incoming mail back to sent messages via the
@@ -8,16 +9,54 @@ import { db } from './db'
  * A reply stops the sequence for that lead.
  */
 export async function checkReplies(days = 14): Promise<number> {
-  const host = process.env.IMAP_HOST
-  const user = process.env.IMAP_USER || process.env.SMTP_USER
-  const pass = process.env.IMAP_PASS || process.env.SMTP_PASS
-  if (!host || !user || !pass) return 0
+  const mailboxes = (await db()`
+    select * from mailboxes where imap_host is not null and imap_host <> ''`) as Mailbox[]
 
+  // Fall back to the environment for an installation that predates the mailboxes table.
+  if (!mailboxes.length && process.env.IMAP_HOST) {
+    const user = process.env.IMAP_USER || process.env.SMTP_USER
+    const pass = process.env.IMAP_PASS || process.env.SMTP_PASS
+    if (!user || !pass) return 0
+    return pollMailbox(
+      {
+        host: process.env.IMAP_HOST,
+        port: Number(process.env.IMAP_PORT ?? 993),
+        user,
+        pass,
+      },
+      days,
+    )
+  }
+
+  let total = 0
+  for (const mailbox of mailboxes) {
+    try {
+      total += await pollMailbox(
+        {
+          host: mailbox.imap_host!,
+          port: mailbox.imap_port,
+          user: mailbox.smtp_user,
+          pass: decrypt(mailbox.smtp_pass),
+        },
+        days,
+      )
+    } catch (error) {
+      // One unreachable mailbox must not stop the others from being checked.
+      console.error('reply check failed for mailbox', mailbox.id, error)
+    }
+  }
+  return total
+}
+
+async function pollMailbox(
+  account: { host: string; port: number; user: string; pass: string },
+  days: number,
+): Promise<number> {
   const client = new ImapFlow({
-    host,
-    port: Number(process.env.IMAP_PORT ?? 993),
+    host: account.host,
+    port: account.port,
     secure: true,
-    auth: { user, pass },
+    auth: { user: account.user, pass: account.pass },
     logger: false,
   })
 

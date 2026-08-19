@@ -12,6 +12,7 @@ process.env.AUTH_SECRET ||= 'test-secret'
 
 const { textToHtml } = await import('../src/lib/format.ts')
 const { trackToken, readTrackToken } = await import('../src/lib/tracking.ts')
+const { encrypt, decrypt } = await import('../src/lib/secrets.ts')
 
 /* ------------------------------------------------------------ pure helpers */
 
@@ -27,6 +28,14 @@ assert.equal(readTrackToken(trackToken(42)), 42, 'token round-trips')
 assert.equal(readTrackToken('42-deadbeefdeadbeef'), null, 'forged signature rejected')
 assert.equal(readTrackToken('43' + trackToken(42).slice(2)), null, 'id swap rejected')
 assert.equal(readTrackToken('nonsense'), null, 'garbage rejected')
+
+// Mailbox passwords must survive a round trip and must not be readable at rest.
+const password = 'hunter2-åäö-🔐'
+const sealed = encrypt(password)
+assert.equal(decrypt(sealed), password, 'password round-trips through AES-GCM')
+assert.ok(!sealed.includes(password), 'ciphertext does not contain the plaintext')
+assert.notEqual(encrypt(password), encrypt(password), 'a fresh IV each time, so no repeats')
+assert.throws(() => decrypt(sealed.slice(0, -4) + 'AAAA'), 'a tampered ciphertext is rejected')
 
 /* ------------------------------------------------------------------ schema */
 

@@ -55,6 +55,14 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
      group by s.id, s.label having count(l.id) > 0
      order by s.created_at desc`) as { id: number; label: string; leads: number }[]
 
+  const mailboxes = (await db()`
+    select id, name, from_email, is_default from mailboxes order by is_default desc, id`) as {
+    id: number
+    name: string
+    from_email: string
+    is_default: boolean
+  }[]
+
   const enrollments = (await db()`
     select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons,
            l.id as lead_id, l.full_name, l.email, l.company_name,
@@ -209,7 +217,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4 space-y-8">
-          <CampaignForm campaign={campaign} searches={searches} />
+          <CampaignForm campaign={campaign} searches={searches} mailboxes={mailboxes} />
           <Card className="border-destructive/40">
             <CardHeader>
               <CardTitle className="text-destructive text-base">Danger zone</CardTitle>

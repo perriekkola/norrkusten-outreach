@@ -12,7 +12,9 @@ import {
   startSession,
   userCount,
 } from './auth'
-import { db, getSetting, jsonb, setSetting, type CampaignStep } from './db'
+import { db, getSetting, jsonb, setSetting, type CampaignStep, type Mailbox } from './db'
+import { forgetMailbox, verifyMailbox } from './email'
+import { encrypt } from './secrets'
 import { draftForEnrollment, ingestSearches, runCampaign, sendMessage, tick } from './engine'
 
 type State = { error?: string; ok?: string }
@@ -102,6 +104,84 @@ export async function saveSettings(_prev: State, formData: FormData): Promise<St
   await setSetting('sender_name', String(formData.get('sender_name') ?? ''))
   refresh()
   return { ok: 'Saved.' }
+}
+
+/* ---------------------------------------------------------------- mailboxes */
+
+export async function saveMailbox(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  const id = Number(formData.get('id')) || null
+  const name = String(formData.get('name') ?? '').trim()
+  const fromEmail = String(formData.get('from_email') ?? '').trim()
+  const smtpUser = String(formData.get('smtp_user') ?? '').trim()
+  const password = String(formData.get('smtp_pass') ?? '')
+
+  if (!name || !fromEmail || !smtpUser) return { error: 'Name, from address and username are required.' }
+  if (!id && !password) return { error: 'A password is required.' }
+
+  const values = {
+    name,
+    fromEmail,
+    replyTo: String(formData.get('reply_to') ?? '').trim() || null,
+    smtpHost: String(formData.get('smtp_host') ?? '').trim(),
+    smtpPort: Number(formData.get('smtp_port')) || 465,
+    smtpUser,
+    imapHost: String(formData.get('imap_host') ?? '').trim() || null,
+    imapPort: Number(formData.get('imap_port')) || 993,
+    isDefault: formData.get('is_default') === 'on',
+  }
+
+  if (id) {
+    await db()`
+      update mailboxes
+         set name = ${values.name}, from_email = ${values.fromEmail}, reply_to = ${values.replyTo},
+             smtp_host = ${values.smtpHost}, smtp_port = ${values.smtpPort},
+             smtp_user = ${values.smtpUser}, imap_host = ${values.imapHost},
+             imap_port = ${values.imapPort}, is_default = ${values.isDefault}
+       where id = ${id}`
+    // Only overwrite the password when a new one was typed — the field is never prefilled.
+    if (password) await db()`update mailboxes set smtp_pass = ${encrypt(password)} where id = ${id}`
+    forgetMailbox(id)
+  } else {
+    await db()`
+      insert into mailboxes
+        (name, from_email, reply_to, smtp_host, smtp_port, smtp_user, smtp_pass,
+         imap_host, imap_port, is_default)
+      values (${values.name}, ${values.fromEmail}, ${values.replyTo}, ${values.smtpHost},
+              ${values.smtpPort}, ${values.smtpUser}, ${encrypt(password)}, ${values.imapHost},
+              ${values.imapPort}, ${values.isDefault})`
+  }
+
+  // Exactly one default, always.
+  if (values.isDefault) {
+    await db()`
+      update mailboxes set is_default = (id = coalesce(${id}::int,
+        (select max(id) from mailboxes)))`
+  }
+
+  refresh()
+  return { ok: 'Saved.' }
+}
+
+export async function testMailbox(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  const [mailbox] = (await db()`
+    select * from mailboxes where id = ${Number(formData.get('id'))}`) as Mailbox[]
+  if (!mailbox) return { error: 'Mailbox not found.' }
+  try {
+    await verifyMailbox(mailbox)
+    return { ok: `${mailbox.smtp_host} accepted the credentials.` }
+  } catch (error) {
+    return { error: `Could not sign in: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+export async function deleteMailbox(formData: FormData) {
+  await requireUser()
+  const id = Number(formData.get('id'))
+  await db()`delete from mailboxes where id = ${id}`
+  forgetMailbox(id)
+  refresh()
 }
 
 /* ----------------------------------------------------------------- searches */
@@ -309,6 +389,7 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
     icp: String(formData.get('icp') ?? ''),
     sources: formData.getAll('source_search_ids').map(Number).filter(Number.isFinite),
     minScore: Math.max(0, Math.min(100, Number(formData.get('min_score')) || 0)),
+    mailboxId: Number(formData.get('mailbox_id')) || null,
     guidelines: String(formData.get('guidelines') ?? ''),
     links: formData
       .getAll('links')
@@ -327,6 +408,7 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
          set name = ${values.name}, icp = ${values.icp}, offer = ${values.offer},
              source_search_ids = ${values.sources}::int[], min_score = ${values.minScore},
              guidelines = ${values.guidelines}, links = ${values.links}::text[],
+             mailbox_id = ${values.mailboxId},
              language = ${values.language},
              from_name = ${values.from_name}, auto_send = ${values.auto_send},
              steps = ${values.steps}::jsonb
@@ -337,11 +419,11 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
 
   const [created] = (await db()`
     insert into campaigns
-      (name, icp, offer, source_search_ids, min_score, guidelines, links, language,
-       from_name, auto_send, steps)
+      (name, icp, offer, source_search_ids, min_score, guidelines, links, mailbox_id,
+       language, from_name, auto_send, steps)
     values (${values.name}, ${values.icp}, ${values.offer}, ${values.sources}::int[],
-            ${values.minScore}, ${values.guidelines}, ${values.links}::text[], ${values.language},
-            ${values.from_name}, ${values.auto_send}, ${values.steps}::jsonb)
+            ${values.minScore}, ${values.guidelines}, ${values.links}::text[], ${values.mailboxId},
+            ${values.language}, ${values.from_name}, ${values.auto_send}, ${values.steps}::jsonb)
     returning id`) as { id: number }[]
   redirect(`/campaigns/${created.id}`)
 }

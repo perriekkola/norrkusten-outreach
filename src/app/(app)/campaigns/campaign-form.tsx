@@ -27,10 +27,12 @@ const DEFAULT_STEPS: CampaignStep[] = [
 export function CampaignForm({
   campaign,
   searches,
+  mailboxes,
   draft,
 }: {
   campaign?: Campaign
   searches: { id: number; label: string; leads: number }[]
+  mailboxes: { id: number; name: string; from_email: string; is_default: boolean }[]
   /** An AI-generated starting point. Fields stay editable — this only seeds them. */
   draft?: CampaignDraft
 }) {
@@ -232,6 +234,33 @@ export function CampaignForm({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="mailbox_id" className="flex items-center gap-1.5">
+            Send from
+            <Hint>
+              Which mailbox delivers this campaign, and where replies are watched for. Manage
+              these under Settings. &ldquo;Default mailbox&rdquo; follows whichever one is marked
+              default, so it changes if you change that.
+            </Hint>
+          </Label>
+          <Select
+            name="mailbox_id"
+            defaultValue={campaign?.mailbox_id ? String(campaign.mailbox_id) : 'default'}
+          >
+            <SelectTrigger id="mailbox_id" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">Default mailbox</SelectItem>
+              {mailboxes.map((mailbox) => (
+                <SelectItem key={mailbox.id} value={String(mailbox.id)}>
+                  {mailbox.name} — {mailbox.from_email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="language" className="flex items-center gap-1.5">
             Language

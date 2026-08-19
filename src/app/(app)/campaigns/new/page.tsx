@@ -11,13 +11,21 @@ export default async function NewCampaignPage() {
      group by s.id, s.label having count(l.id) > 0
      order by s.created_at desc`) as { id: number; label: string; leads: number }[]
 
+  const mailboxes = (await db()`
+    select id, name, from_email, is_default from mailboxes order by is_default desc, id`) as {
+    id: number
+    name: string
+    from_email: string
+    is_default: boolean
+  }[]
+
   return (
     <>
       <PageHeader
         title="New campaign"
         description="Describe what you want to sell and let Claude draft it, or fill it in yourself."
       />
-      <NewCampaign searches={searches} />
+      <NewCampaign searches={searches} mailboxes={mailboxes} />
     </>
   )
 }

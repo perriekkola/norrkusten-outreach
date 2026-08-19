@@ -10,8 +10,10 @@ import { CampaignForm } from '../campaign-form'
 
 export function NewCampaign({
   searches,
+  mailboxes,
 }: {
   searches: { id: number; label: string; leads: number }[]
+  mailboxes: { id: number; name: string; from_email: string; is_default: boolean }[]
 }) {
   const [state, generate, generating] = useActionState(generateCampaign, {})
 
@@ -62,6 +64,7 @@ export function NewCampaign({
       <CampaignForm
         key={state.draft ? 'drafted' : 'blank'}
         searches={searches}
+        mailboxes={mailboxes}
         draft={state.draft}
       />
     </div>

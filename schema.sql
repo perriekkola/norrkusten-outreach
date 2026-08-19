@@ -135,3 +135,22 @@ alter table campaigns add column if not exists links      text[] not null defaul
 alter table campaigns drop column if exists link_url;
 alter table messages  add column if not exists click_count int not null default 0;
 alter table messages  add column if not exists clicked_at  timestamptz;
+
+-- Sending identities. Several mailboxes, chosen per campaign, so outreach can come
+-- from the person who owns the relationship rather than one shared address.
+create table if not exists mailboxes (
+  id          serial primary key,
+  name        text not null,
+  from_email  text not null,
+  reply_to    text,
+  smtp_host   text not null,
+  smtp_port   int  not null default 465,
+  smtp_user   text not null,
+  smtp_pass   text not null,
+  imap_host   text,
+  imap_port   int  not null default 993,
+  is_default  boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+alter table campaigns add column if not exists mailbox_id int references mailboxes(id) on delete set null;

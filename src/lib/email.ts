@@ -1,35 +1,89 @@
 import 'server-only'
 import nodemailer from 'nodemailer'
+import { db, type Mailbox } from './db'
 import { textToHtml } from './format'
+import { decrypt } from './secrets'
 import { appUrl, clickToken, trackToken } from './tracking'
 
-let transport: nodemailer.Transporter | null = null
+/** One pooled transport per mailbox, reused across warm invocations. */
+const transports = new Map<number, nodemailer.Transporter>()
 
-/** SMTP (one.com: send.one.com, port 465 SSL). Reused across warm invocations. */
-function smtp() {
-  if (transport) return transport
+function transportFor(mailbox: Mailbox) {
+  const existing = transports.get(mailbox.id)
+  if (existing) return existing
 
-  const host = process.env.SMTP_HOST
-  const user = process.env.SMTP_USER
-  const pass = process.env.SMTP_PASS
-  if (!host || !user || !pass) throw new Error('SMTP_HOST, SMTP_USER and SMTP_PASS must be set')
-
-  const port = Number(process.env.SMTP_PORT ?? 465)
-  transport = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465, // 465 = implicit TLS, 587 = STARTTLS
-    auth: { user, pass },
+  const transport = nodemailer.createTransport({
+    host: mailbox.smtp_host,
+    port: mailbox.smtp_port,
+    secure: mailbox.smtp_port === 465, // 465 = implicit TLS, 587 = STARTTLS
+    auth: { user: mailbox.smtp_user, pass: decrypt(mailbox.smtp_pass) },
     pool: true,
     maxConnections: 2,
     rateDelta: 1000,
     rateLimit: 2,
   })
+  transports.set(mailbox.id, transport)
   return transport
 }
 
-export function fromAddress() {
-  return process.env.FROM_EMAIL || process.env.SMTP_USER || ''
+/** Drop a cached transport after its credentials change. */
+export function forgetMailbox(id: number) {
+  transports.get(id)?.close()
+  transports.delete(id)
+}
+
+/**
+ * Campaign mailbox, else the default one, else the environment. The env path keeps
+ * an installation that predates mailboxes sending until someone adds one.
+ */
+export async function resolveMailbox(mailboxId?: number | null): Promise<Mailbox> {
+  const rows = (await db()`
+    select * from mailboxes
+     where (${mailboxId ?? null}::int is null or id = ${mailboxId ?? null}::int)
+     order by is_default desc, id limit 1`) as Mailbox[]
+  if (rows[0]) return rows[0]
+
+  const host = process.env.SMTP_HOST
+  const user = process.env.SMTP_USER
+  const pass = process.env.SMTP_PASS
+  if (!host || !user || !pass) {
+    throw new Error('No mailbox configured — add one under Settings.')
+  }
+  return {
+    id: 0,
+    name: 'Environment',
+    from_email: process.env.FROM_EMAIL || user,
+    reply_to: process.env.REPLY_TO_EMAIL || null,
+    smtp_host: host,
+    smtp_port: Number(process.env.SMTP_PORT ?? 465),
+    smtp_user: user,
+    smtp_pass: '',
+    imap_host: process.env.IMAP_HOST || null,
+    imap_port: Number(process.env.IMAP_PORT ?? 993),
+    is_default: true,
+    created_at: '',
+  }
+}
+
+/** Env mailboxes carry no encrypted password; use the raw env value for those. */
+function passwordFor(mailbox: Mailbox) {
+  return mailbox.id === 0 ? (process.env.SMTP_PASS ?? '') : decrypt(mailbox.smtp_pass)
+}
+
+function open(mailbox: Mailbox) {
+  if (mailbox.id === 0) {
+    return nodemailer.createTransport({
+      host: mailbox.smtp_host,
+      port: mailbox.smtp_port,
+      secure: mailbox.smtp_port === 465,
+      auth: { user: mailbox.smtp_user, pass: passwordFor(mailbox) },
+      pool: true,
+      maxConnections: 2,
+      rateDelta: 1000,
+      rateLimit: 2,
+    })
+  }
+  return transportFor(mailbox)
 }
 
 /** Open-tracking pixel. Omitted when the public URL is unknown (local dev). */
@@ -51,28 +105,26 @@ export async function sendEmail(args: {
   to: string
   subject: string
   body: string
-  /** Enables the open-tracking pixel and threads replies back to this message. */
+  /** Enables open tracking and click rewriting for this message. */
   messageId?: number
-  headers?: Record<string, string>
-}): Promise<{ id: string }> {
-  const from = fromAddress()
-  if (!from) throw new Error('FROM_EMAIL is not set')
+  mailboxId?: number | null
+}): Promise<{ id: string; mailbox: string }> {
+  const mailbox = await resolveMailbox(args.mailboxId)
 
-  const info = await smtp().sendMail({
-    from,
+  const info = await open(mailbox).sendMail({
+    from: mailbox.from_email,
     to: args.to,
-    replyTo: process.env.REPLY_TO_EMAIL || undefined,
+    replyTo: mailbox.reply_to || undefined,
     subject: args.subject,
     text: args.body,
     html: textToHtml(args.body, pixelUrl(args.messageId), linkRewriter(args.messageId)),
-    headers: args.headers,
   })
 
   if (info.rejected?.length) throw new Error(`Rejected by server: ${info.rejected.join(', ')}`)
-  return { id: info.messageId }
+  return { id: info.messageId, mailbox: mailbox.name }
 }
 
-/** Used by /settings to prove the mailbox works before a campaign goes out. */
-export async function verifySmtp() {
-  await smtp().verify()
+/** Used by Settings to prove a mailbox works before a campaign goes out. */
+export async function verifyMailbox(mailbox: Mailbox) {
+  await open(mailbox).verify()
 }

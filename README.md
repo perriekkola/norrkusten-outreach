@@ -19,7 +19,7 @@ Apify search  →  leads  →  Claude qualify + research  →  campaign  →  ou
 | **Campaigns** | The workspace. A campaign names the searches it pulls leads from, its own ICP, a score floor, the offer and the sequence. **Run now** does the whole chain in one pass — enrol, score against *this* campaign's ICP, draft what is due, best-scoring first. Safe to repeat; every stage skips work already done. |
 | **Outbox** | Every draft waits for approval (unless the campaign has auto-send on). Edit, approve, send now or discard. |
 | **Analytics** | Funnel, activity over any date range, per-campaign open and reply rates. Filter by campaign and by date. |
-| **Settings** | Your ICP text, sender name, admin users, and which env vars are set. |
+| **Settings** | Mailboxes (several sending identities, chosen per campaign), sender name, admin users, and which env vars are set. |
 
 A cron (`/api/cron`) imports finished searches, checks IMAP for replies, drafts what is due and
 sends what is approved — replies first, so a lead who answered never gets the next step. Every
@@ -56,13 +56,9 @@ Vercel → Settings → Environment Variables.
 | `CLAUDE_MODEL_RESEARCH` | Optional. Default `claude-haiku-4-5` — research is the bulk of the bill |
 | `CLAUDE_MODEL_DRAFT` | Optional. Default `claude-opus-5` — this output is the reply rate |
 | `APIFY_TOKEN` | apify.com → Settings → API tokens |
-| `SMTP_HOST` / `SMTP_PORT` | one.com: `send.one.com`, `465` |
-| `SMTP_USER` / `SMTP_PASS` | Full mailbox address + its password |
-| `FROM_EMAIL` | `Ditt Namn <hej@dindoman.se>` |
-| `REPLY_TO_EMAIL` | Optional |
-| `IMAP_HOST` / `IMAP_PORT` | one.com: `imap.one.com`, `993`. Falls back to the SMTP credentials for user/pass. Leave `IMAP_HOST` empty to disable reply detection. |
+| `SMTP_*`, `IMAP_*`, `FROM_EMAIL` | **Fallback only.** Mailboxes live in the database — add them under Settings. These are used only when no mailbox exists, so an existing install keeps sending. |
 | `APP_URL` | Public URL, for the open-tracking pixel. Auto-detected on Vercel. |
-| `AUTH_SECRET` | `openssl rand -base64 32` |
+| `AUTH_SECRET` | `openssl rand -base64 32`. Signs sessions **and** derives the key that encrypts mailbox passwords — changing it means re-entering every mailbox password. |
 | `CRON_SECRET` | `openssl rand -base64 32` |
 
 ### 3. First run

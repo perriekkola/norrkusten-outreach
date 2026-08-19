@@ -141,17 +141,22 @@ export async function sendMessage(messageId: number) {
   const [message] = (await db()`select * from messages where id = ${messageId}`) as Message[]
   if (!message || message.status === 'sent') return
 
-  const [lead] = (await db()`select email from leads where id = ${message.lead_id}`) as {
-    email: string
-  }[]
-  if (!lead) throw new Error('Lead is gone')
+  const [row] = (await db()`
+    select l.email, c.mailbox_id
+      from messages m
+      join leads l on l.id = m.lead_id
+      join enrollments e on e.id = m.enrollment_id
+      join campaigns c on c.id = e.campaign_id
+     where m.id = ${message.id}`) as { email: string; mailbox_id: number | null }[]
+  if (!row) throw new Error('Lead is gone')
 
   try {
     const sent = await sendEmail({
-      to: lead.email,
+      to: row.email,
       subject: message.subject,
       body: message.body,
       messageId: message.id,
+      mailboxId: row.mailbox_id,
     })
     await db()`
       update messages set status = 'sent', provider_id = ${sent.id}, sent_at = now(), error = null

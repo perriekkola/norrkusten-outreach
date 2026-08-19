@@ -69,6 +69,22 @@ export type Enrollment = {
 
 export type CampaignStep = { delay_days: number; goal: string }
 
+export type Mailbox = {
+  id: number
+  name: string
+  from_email: string
+  reply_to: string | null
+  smtp_host: string
+  smtp_port: number
+  smtp_user: string
+  /** Encrypted at rest; never send this to the client. */
+  smtp_pass: string
+  imap_host: string | null
+  imap_port: number
+  is_default: boolean
+  created_at: string
+}
+
 export type Campaign = {
   id: number
   name: string
@@ -85,6 +101,8 @@ export type Campaign = {
   guidelines: string
   /** Pages the emails should point at. Several when a campaign pitches more than one course. */
   links: string[]
+  /** Which mailbox sends this campaign. Null falls back to the default mailbox. */
+  mailbox_id: number | null
   steps: CampaignStep[]
   status: 'active' | 'paused'
   created_at: string
