@@ -41,19 +41,20 @@ export function NewSearch() {
             Fill the filters for me
           </CardTitle>
           <CardDescription>
-            Describe who you want to reach, or paste the course page you want to sell. Claude picks
-            the job titles, industries and locations from Apify&rsquo;s own lists and fills in the
-            form below for you to adjust.
+            Paste the course page you want to sell, or just describe who to reach. Claude reads any
+            page you give it, works out who buys that course, and fills the form below with job
+            titles, industries and locations from Apify&rsquo;s own lists for you to adjust.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Textarea
-            rows={3}
+            rows={4}
             value={brief}
             onChange={(event) => setBrief(event.target.value)}
             disabled={generating}
             placeholder={
-              'HR- och utbildningsansvariga på svenska tillverkande bolag med 50–500 anställda'
+              'Vilka ska vi nå med den här kursen?\n' +
+              'https://norrkusten.se/nya-maskinforordningen/'
             }
           />
           <div className="flex flex-wrap items-center gap-3">
