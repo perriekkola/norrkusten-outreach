@@ -56,6 +56,11 @@ assert.ok(
 assert.ok(formatDetail('x'.repeat(200)).length <= 44, 'plain text is clipped')
 assert.equal(formatDetail(undefined), '', 'no detail renders nothing')
 
+const { matchLocations } = await import('../src/lib/apify-options.ts')
+assert.deepEqual(matchLocations(['Sweden', ' norway ']), ['sweden', 'norway'], 'case and spacing')
+assert.deepEqual(matchLocations(['norrland']), [], 'a location Apify does not know is dropped')
+assert.deepEqual(matchLocations(['sweden', 'Sweden']), ['sweden'], 'duplicates collapse')
+
 assert.equal(readTrackToken(trackToken(42)), 42, 'token round-trips')
 assert.equal(readTrackToken('42-deadbeefdeadbeef'), null, 'forged signature rejected')
 assert.equal(readTrackToken('43' + trackToken(42).slice(2)), null, 'id swap rejected')
