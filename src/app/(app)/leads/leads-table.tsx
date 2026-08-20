@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deleteLeads, enrollLeads } from '@/lib/actions'
+import { blockLeads, deleteLeads, enrollLeads } from '@/lib/actions'
 import type { Campaign } from '@/lib/db'
 import type { LeadRow } from './page'
 
@@ -100,10 +100,23 @@ export function LeadsTable({
         </DropdownMenu>
 
         <ConfirmButton
+          action={blockLeads}
+          payload={{ leadId: selected }}
+          disabled={!selected.length || !!busy}
+          className="ml-auto"
+          title={`Block ${selected.length} lead${selected.length === 1 ? '' : 's'}?`}
+          description="What to use when someone asks to be taken off the list. Their address goes on the blocked list in Settings: every campaign drops them, pending drafts are skipped, and a future search cannot re-import them. Deleting alone does not do that — the next matching search would bring them straight back."
+          confirmLabel="Block"
+          pendingLabel="Blocking…"
+        >
+          Block
+        </ConfirmButton>
+
+        <ConfirmButton
           action={deleteLeads}
           payload={{ leadId: selected }}
           disabled={!selected.length || !!busy}
-          className="text-destructive ml-auto"
+          className="text-destructive"
           title={`Delete ${selected.length} lead${selected.length === 1 ? '' : 's'}?`}
           description="This removes the leads and every enrollment, score and draft attached to them. Sent emails stay in the record. It cannot be undone — re-running the search would re-import them as new."
           confirmLabel="Delete"

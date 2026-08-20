@@ -156,3 +156,18 @@ create table if not exists mailboxes (
 
 alter table campaigns add column if not exists mailbox_id int references mailboxes(id) on delete set null;
 alter table mailboxes add column if not exists signature text not null default '';
+
+-- Suppression list. Survives lead deletion on purpose: a person who asked to be left
+-- alone must stay left alone even if a later search re-imports their address.
+-- An entry starting with '@' suppresses the whole domain.
+create table if not exists suppressions (
+  email      text primary key,
+  reason     text not null default '',
+  source     text not null default 'manual',  -- manual | unsubscribe | bounce
+  created_at timestamptz not null default now()
+);
+
+-- Which mailbox actually sent a message. The campaign's mailbox_id can change later,
+-- so the send-rate ledger has to read what was used at the time, not what is set now.
+alter table messages add column if not exists mailbox_id int references mailboxes(id) on delete set null;
+create index if not exists idx_msg_sent_at on messages(mailbox_id, sent_at);

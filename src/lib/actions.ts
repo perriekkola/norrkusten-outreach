@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { refresh } from 'next/cache'
 import { describeApiError } from './ai'
 import { startRun, abortRun, type LeadSearchInput } from './apify'
+import { ACTOR_MAX_LEADS, DEFAULT_LEADS } from './apify-options'
 import {
   checkPassword,
   endSession,
@@ -15,6 +16,7 @@ import {
 import { db, jsonb, setSetting, type CampaignStep, type Mailbox } from './db'
 import { forgetMailbox, sendEmail, verifyMailbox } from './email'
 import { encrypt } from './secrets'
+import { suppress, unsuppress } from './suppression'
 import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
 type State = { error?: string; ok?: string }
@@ -88,6 +90,43 @@ export async function saveSettings(_prev: State, formData: FormData): Promise<St
   await setSetting('sender_name', String(formData.get('sender_name') ?? ''))
   refresh()
   return { ok: 'Saved.' }
+}
+
+export async function saveSendingLimits(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  // Clamped, not merely validated: 50/day/mailbox is where domain reputation damage
+  // starts climbing, and a typo of 400 in this box is a burnt sending domain.
+  const cap = Math.max(1, Math.min(50, Number(formData.get('daily_send_cap')) || 40))
+  const cooldown = Math.max(0, Math.min(30, Number(formData.get('lead_cooldown_days')) || 0))
+  await setSetting('daily_send_cap', String(cap))
+  await setSetting('lead_cooldown_days', String(cooldown))
+  refresh()
+  return { ok: `Saved — ${cap}/day per mailbox, ${Math.ceil(cap / 2)} per cron run.` }
+}
+
+/* --------------------------------------------------------------- suppression */
+
+export async function addSuppression(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  const raw = String(formData.get('email') ?? '').trim()
+  if (!raw.includes('@')) return { error: 'Enter an address, or @domain.se for a whole company.' }
+  try {
+    const stopped = await suppress(raw, String(formData.get('reason') ?? '').trim(), 'manual')
+    refresh()
+    return {
+      ok: stopped
+        ? `Blocked. ${stopped} lead${stopped === 1 ? '' : 's'} removed from every campaign.`
+        : 'Blocked. Nothing in the pool matched, so nothing was in flight.',
+    }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+export async function removeSuppression(formData: FormData) {
+  await requireUser()
+  await unsuppress(String(formData.get('email') ?? ''))
+  refresh()
 }
 
 /* ---------------------------------------------------------------- mailboxes */
@@ -175,11 +214,14 @@ export async function deleteMailbox(formData: FormData) {
 export async function createSearch(_prev: State, formData: FormData): Promise<State> {
   await requireUser()
   const label = String(formData.get('label') ?? '').trim() || 'Search'
-  const count = Number(formData.get('fetch_count') ?? 100)
+  const count = Number(formData.get('fetch_count') ?? DEFAULT_LEADS)
 
   const input: LeadSearchInput = {
     file_name: label,
-    fetch_count: Number.isFinite(count) && count > 0 ? Math.min(count, 50_000) : 100,
+    // The actor's own schema sets no maximum and defaults to 100 000, so this ceiling is
+    // ours, not theirs. It is a ceiling, not an order: billing is per lead returned.
+    fetch_count:
+      Number.isFinite(count) && count > 0 ? Math.min(count, ACTOR_MAX_LEADS) : DEFAULT_LEADS,
     contact_job_title: list(formData.get('contact_job_title')),
     contact_not_job_title: list(formData.get('contact_not_job_title')),
     seniority_level: formData.getAll('seniority_level').map(String),
@@ -277,6 +319,23 @@ export async function setLeadStatus(formData: FormData) {
 export async function deleteLeads(formData: FormData) {
   await requireUser()
   await db()`delete from leads where id = any(${ids(formData)}::int[])`
+  refresh()
+}
+
+/**
+ * What to press when someone replies "take us off your list". Deleting them is not
+ * enough — the address has to go on the suppression list, or the next search that
+ * matches them puts them straight back into a campaign.
+ */
+export async function blockLeads(formData: FormData) {
+  await requireUser()
+  const rows = (await db()`
+    select email from leads where id = any(${ids(formData)}::int[])`) as { email: string }[]
+  // ponytail: one full pass over `leads` per address. Fine for the handful anyone blocks
+  // by hand; if this is ever pointed at a select-all of thousands, suppress in bulk.
+  for (const row of rows) {
+    await suppress(row.email, 'Blocked from the leads list', 'manual')
+  }
   refresh()
 }
 
@@ -424,11 +483,16 @@ export async function approveMessages(formData: FormData) {
   refresh()
 }
 
+/**
+ * Send now overrides the pacing guards — the daily cap and the per-lead cooldown exist
+ * to stop the cron blasting, and this is a person picking specific rows. The suppression
+ * check inside sendMessage is not overridable, and must not become so.
+ */
 export async function sendNow(formData: FormData) {
   await requireUser()
   for (const id of formData.getAll('messageId').map(Number)) {
     try {
-      await sendMessage(id)
+      await sendMessage(id, { force: true })
     } catch (error) {
       console.error('send failed', id, error)
     }
@@ -489,15 +553,17 @@ export async function sendTestEmail(_prev: State, formData: FormData): Promise<S
   const to = String(formData.get('to') ?? '').trim()
   if (!to.includes('@')) return { error: 'Enter an address to send the test to.' }
 
+  const id = Number(formData.get('id'))
   const [message] = (await db()`
-    select m.subject, m.body, c.mailbox_id
+    select m.subject, m.body, c.mailbox_id, c.language
       from messages m
       join enrollments e on e.id = m.enrollment_id
       join campaigns c on c.id = e.campaign_id
-     where m.id = ${Number(formData.get('id'))}`) as {
+     where m.id = ${id}`) as {
     subject: string
     body: string
     mailbox_id: number | null
+    language: string
   }[]
   if (!message) return { error: 'Draft not found.' }
 
@@ -506,6 +572,11 @@ export async function sendTestEmail(_prev: State, formData: FormData): Promise<S
       to,
       subject: `[TEST] ${message.subject}`,
       body: message.body,
+      // The id is passed for the opt-out notice only — a test has to show the footer the
+      // lead would get — while `track: false` keeps the pixel and rewritten links out.
+      messageId: id,
+      track: false,
+      language: message.language,
       mailboxId: message.mailbox_id,
     })
     await setSetting('test_email', to)

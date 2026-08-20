@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,7 +18,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { MultiSelect } from '@/components/multi-select'
 import { createSearch } from '@/lib/actions'
 import type { SearchDraft } from '@/lib/ai'
+import { APIFY_PER_LEAD, APIFY_RUN_START, UNIT, searchCost, unitUsd, usd } from '@/lib/costs'
 import {
+  ACTOR_MAX_LEADS,
+  DEFAULT_LEADS,
   COMPANY_SIZE,
   EMAIL_STATUS,
   FUNCTION,
@@ -95,6 +98,7 @@ const lines = (values?: string[]) => values?.join(', ')
 
 export function SearchForm({ draft }: { draft?: SearchDraft }) {
   const [state, action, pending] = useActionState(createSearch, {})
+  const [count, setCount] = useState(DEFAULT_LEADS)
 
   return (
     <Card className="h-fit lg:sticky lg:top-20">
@@ -113,8 +117,40 @@ export function SearchForm({ draft }: { draft?: SearchDraft }) {
               />
             </Field>
             <Field label="Max leads">
-              <Input name="fetch_count" type="number" min={1} max={50000} defaultValue={100} />
+              <Input
+                name="fetch_count"
+                type="number"
+                min={1}
+                max={ACTOR_MAX_LEADS}
+                defaultValue={DEFAULT_LEADS}
+                onChange={(event) => setCount(Number(event.target.value) || 0)}
+              />
             </Field>
+          </div>
+
+          <div className="bg-muted/40 space-y-2 rounded-lg border p-3 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">
+                Ceiling {count.toLocaleString('sv-SE')} leads · at most{' '}
+                {usd(searchCost(count))}
+              </span>
+            </div>
+            <p className="text-muted-foreground leading-relaxed">
+              The actor has <strong>no hard maximum</strong> — its own default is{' '}
+              {ACTOR_MAX_LEADS.toLocaleString('sv-SE')} and an empty value means everything
+              matching, so set this high and let the filters do the narrowing. Billing is per
+              lead <em>actually returned</em> ({unitUsd(APIFY_PER_LEAD)} each, less on a paid
+              Apify plan) plus {unitUsd(APIFY_RUN_START)} to start the run. A ceiling of{' '}
+              {count.toLocaleString('sv-SE')} on a search that finds 300 people costs{' '}
+              {usd(searchCost(300))}, not {usd(searchCost(count))}.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              Scoring them against a campaign&apos;s ICP is billed separately, roughly{' '}
+              {usd(UNIT.qualify)} per lead ({usd(count * UNIT.qualify)} if all{' '}
+              {count.toLocaleString('sv-SE')} arrive). Only the ones clearing the campaign&apos;s
+              score floor are then researched and written, at about{' '}
+              {usd(UNIT.research + UNIT.draft)} each.
+            </p>
           </div>
 
           <Field label="Job titles" hint="One per line or comma separated.">

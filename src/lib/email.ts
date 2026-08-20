@@ -1,9 +1,9 @@
 import 'server-only'
 import nodemailer from 'nodemailer'
 import { db, type Mailbox } from './db'
-import { textToHtml, withSignature } from './format'
+import { textToHtml, unsubscribeNotice, withSignature } from './format'
 import { decrypt } from './secrets'
-import { appUrl, clickToken, trackToken } from './tracking'
+import { appUrl, clickToken, trackToken, unsubToken } from './tracking'
 
 /** One pooled transport per mailbox, reused across warm invocations. */
 const transports = new Map<number, nodemailer.Transporter>()
@@ -106,20 +106,47 @@ export async function sendEmail(args: {
   to: string
   subject: string
   body: string
-  /** Enables open tracking and click rewriting for this message. */
+  /** Identifies the message for open tracking, click rewriting and the opt-out link. */
   messageId?: number
   mailboxId?: number | null
+  /** Picks the language of the legal notice. Defaults to Swedish. */
+  language?: string
+  /** Off for test sends: the notice still renders, the pixel and rewritten links do not. */
+  track?: boolean
 }): Promise<{ id: string; mailbox: string }> {
   const mailbox = await resolveMailbox(args.mailboxId)
   const body = withSignature(args.body, mailbox.signature)
+  const track = args.track !== false
+
+  // Required in every marketing email under ePrivacy art. 13(4) — see unsubscribeNotice.
+  // Without a public URL (local dev) there is no link to give, so the notice is omitted
+  // rather than printed dead; nothing is delivered to a real lead from there anyway.
+  const base = appUrl()
+  const unsubUrl =
+    args.messageId && base ? `${base}/api/u/${unsubToken(args.messageId)}` : ''
+  const notice = unsubUrl ? unsubscribeNotice(unsubUrl, args.language) : null
 
   const info = await open(mailbox).sendMail({
     from: mailbox.from_email,
     to: args.to,
     replyTo: mailbox.reply_to || undefined,
     subject: args.subject,
-    text: body,
-    html: textToHtml(body, pixelUrl(args.messageId), linkRewriter(args.messageId)),
+    text: body + (notice?.text ?? ''),
+    html: textToHtml(
+      body,
+      track ? pixelUrl(args.messageId) : undefined,
+      track ? linkRewriter(args.messageId) : undefined,
+      notice?.html,
+    ),
+    // RFC 8058 one-click, plus the mailto ePrivacy actually asks for. Gmail and Outlook
+    // surface this as their own Unsubscribe button, which keeps opt-outs out of the
+    // spam-report path — the single cheapest thing there is for domain reputation.
+    headers: unsubUrl
+      ? {
+          'List-Unsubscribe': `<mailto:${mailbox.reply_to || mailbox.from_email}?subject=unsubscribe>, <${unsubUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        }
+      : undefined,
   })
 
   if (info.rejected?.length) throw new Error(`Rejected by server: ${info.rejected.join(', ')}`)

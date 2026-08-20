@@ -22,6 +22,16 @@ export function readClickToken(token: string, url: string): number | null {
   return signature === sign(`click:${id}:${url}`) ? id : null
 }
 
+/** Opt-out link. Signed per message, so the URL carries no address to harvest. */
+export const unsubToken = (id: number) => `${id}-${sign(`unsub:${id}`)}`
+
+export function readUnsubToken(token: string): number | null {
+  const [rawId, signature] = token.split('-')
+  const id = Number(rawId)
+  if (!Number.isFinite(id) || !signature) return null
+  return signature === sign(`unsub:${id}`) ? id : null
+}
+
 export function readTrackToken(token: string): number | null {
   const [rawId, signature] = token.split('-')
   const id = Number(rawId)

@@ -61,6 +61,33 @@ assert.deepEqual(matchLocations(['Sweden', ' norway ']), ['sweden', 'norway'], '
 assert.deepEqual(matchLocations(['norrland']), [], 'a location Apify does not know is dropped')
 assert.deepEqual(matchLocations(['sweden', 'Sweden']), ['sweden'], 'duplicates collapse')
 
+// Every shape a scraper hands back for one person has to collapse to one row, because
+// the unique index on leads.email is the only thing stopping the duplicate.
+const { normalizeEmail, unsubscribeNotice } = await import('../src/lib/format.ts')
+for (const raw of [' Per@X.se ', 'PER@X.SE', 'mailto:per@x.se', 'Per Riekkola <Per@X.se>']) {
+  assert.equal(normalizeEmail(raw), 'per@x.se', `normalises ${JSON.stringify(raw)}`)
+}
+
+// The legally obliged footer: present, and pointing at the opt-out.
+const notice = unsubscribeNotice('https://e.test/api/u/7-abc', 'sv')
+assert.ok(notice.text.includes('https://e.test/api/u/7-abc'), 'plain text carries the URL')
+assert.ok(notice.html.includes('href="https://e.test/api/u/7-abc"'), 'html links to it')
+assert.ok(/avregistrera/i.test(notice.html), 'Swedish wording for a Swedish campaign')
+assert.ok(/unsubscribe/i.test(unsubscribeNotice('https://e.test/u', 'en').html), 'English fallback')
+
+// The opt-out must never be routed through the click tracker: that reads as a dark
+// pattern and would break the one-click POST.
+const withNotice = textToHtml('Hej https://norrkusten.se/kurs', undefined, (u) => `TRACKED:${u}`, notice.html)
+assert.ok(withNotice.includes('TRACKED:https://norrkusten.se/kurs'), 'body links are rewritten')
+assert.ok(withNotice.includes('href="https://e.test/api/u/7-abc"'), 'the opt-out link is not')
+assert.ok(!textToHtml('Hej').includes('avregistrera'), 'no notice unless one is passed in')
+
+const { unsubToken, readUnsubToken } = await import('../src/lib/tracking.ts')
+assert.equal(readUnsubToken(unsubToken(7)), 7, 'opt-out token round-trips')
+assert.equal(readUnsubToken('7-deadbeefdeadbeef'), null, 'forged opt-out token rejected')
+assert.notEqual(unsubToken(7), trackToken(7), 'opt-out and pixel tokens are not interchangeable')
+assert.equal(readUnsubToken(trackToken(7)), null, 'a pixel token cannot unsubscribe anyone')
+
 assert.equal(readTrackToken(trackToken(42)), 42, 'token round-trips')
 assert.equal(readTrackToken('42-deadbeefdeadbeef'), null, 'forged signature rejected')
 assert.equal(readTrackToken('43' + trackToken(42).slice(2)), null, 'id swap rejected')
@@ -285,6 +312,95 @@ assert.equal(
              where ($1::int is null or campaign_id = $1::int)`, [2])).length,
   1,
   'optional campaign filter: narrows to one campaign',
+)
+
+/* ------------------------------------------------------------- suppression */
+
+// The whole point of keying by address: it has to outlive the lead row, or deleting
+// someone and re-importing them from a later search puts them back in a campaign.
+const SUPPRESSED = `
+  exists (select 1 from suppressions s
+           where s.email = %EMAIL%
+              or (left(s.email, 1) = '@' and right(%EMAIL%, length(s.email)) = s.email))`
+const leadSuppressed = SUPPRESSED.replaceAll('%EMAIL%', 'l.email')
+
+await db.exec(`
+  insert into suppressions (email, source) values ('c@d.se', 'unsubscribe'), ('@blocked.se', 'manual');
+  insert into leads (id, email, full_name) values (5, 'x@blocked.se', 'X'), (6, 'ok@fine.se', 'OK');
+`)
+
+assert.deepEqual(
+  await q(`select l.id from leads l where ${leadSuppressed} order by l.id`),
+  [{ id: 2 }, { id: 5 }],
+  'an exact address and an @domain entry both match; nobody else does',
+)
+
+// A domain entry must not match a lookalike suffix — 'notblocked.se' ends with
+// 'blocked.se' but is a different company.
+await db.exec(`insert into leads (id, email) values (7, 'y@notblocked.se')`)
+assert.deepEqual(
+  await q(`select l.id from leads l where ${leadSuppressed} and l.id = 7`),
+  [],
+  'a domain entry matches on the @ boundary, not on any suffix',
+)
+
+// The enrol query has to skip them, or every suppressed lead still costs a scoring call.
+await db.exec(`update leads set search_id = null where id > 0`)
+assert.deepEqual(
+  await q(
+    `select l.id from leads l where l.status <> 'rejected' and not ${leadSuppressed} order by l.id`,
+  ),
+  [{ id: 1 }, { id: 3 }, { id: 4 }, { id: 6 }, { id: 7 }],
+  'enrolment skips suppressed leads',
+)
+
+/* ------------------------------------------------------------- send pacing */
+
+// Rolling 24 hours per mailbox, with pre-mailbox_id rows falling into the default bucket.
+await db.exec(`
+  insert into mailboxes (id, name, from_email, smtp_host, smtp_user, smtp_pass, is_default)
+  values (1, 'Main', 'a@n.se', 'smtp', 'u', 'p', true), (2, 'Other', 'b@n.se', 'smtp', 'u', 'p', false);
+  insert into messages (enrollment_id, lead_id, step, subject, body, status, mailbox_id, sent_at)
+  values (1, 1, 10, 's', 'b', 'sent', 1,    now() - interval '2 hours'),
+         (1, 1, 11, 's', 'b', 'sent', 1,    now() - interval '30 hours'),
+         (1, 1, 12, 's', 'b', 'sent', 2,    now() - interval '1 hour'),
+         (1, 1, 13, 's', 'b', 'sent', null, now() - interval '3 hours');
+`)
+assert.deepEqual(
+  await q(`
+    select coalesce(m.mailbox_id, (select id from mailboxes where is_default order by id limit 1), 0)
+             as mailbox_id,
+           count(*)::int as sent
+      from messages m
+     where m.status = 'sent' and m.sent_at > now() - interval '24 hours'
+     group by 1 order by 1`),
+  [
+    { mailbox_id: 1, sent: 2 },
+    { mailbox_id: 2, sent: 1 },
+  ],
+  'the 30-hour-old send has aged out; the pre-mailbox_id row counts against the default',
+)
+
+// One person, one email — the guard that stops five campaigns mailing the same lead.
+assert.equal(
+  (await q(
+    `select 1 from messages
+      where lead_id = $1 and id <> $2 and status = 'sent'
+        and sent_at > now() - make_interval(days => $3::int) limit 1`,
+    [1, -1, 3],
+  )).length,
+  1,
+  'a lead emailed 2 hours ago is inside a 3-day cooldown',
+)
+assert.equal(
+  (await q(
+    `select 1 from messages
+      where lead_id = $1 and id <> $2 and status = 'sent'
+        and sent_at > now() - make_interval(days => $3::int) limit 1`,
+    [3, -1, 3],
+  )).length,
+  0,
+  'a lead we never emailed is not held back',
 )
 
 await db.close()

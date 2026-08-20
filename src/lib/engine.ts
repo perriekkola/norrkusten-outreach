@@ -1,9 +1,11 @@
 import 'server-only'
 import { getDatasetItems, getRun } from './apify'
 import { describeApiError, draftEmail, qualifyLead, researchCompany } from './ai'
-import { db, jsonb, type Campaign, type Lead, type Message } from './db'
+import { db, getSetting, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
+import { normalizeEmail } from './format'
 import { checkReplies } from './replies'
+import { LEAD_IS_SUPPRESSED, suppressedAmong } from './suppression'
 
 const str = (row: Record<string, unknown>, key: string) => {
   const value = row[key]
@@ -11,19 +13,32 @@ const str = (row: Record<string, unknown>, key: string) => {
   return String(value).slice(0, 2000)
 }
 
-/** Apify rows -> leads. Unknown fields survive in `raw`. */
+/**
+ * Apify rows -> leads. Unknown fields survive in `raw`.
+ *
+ * Two things stop a duplicate here, and both are needed. The unique index on
+ * `leads.email` only fires once the address is normalised — a scraper handing back
+ * ` Per@X.se ` and `per@x.se` would otherwise be two people. And the suppression list
+ * is checked before the insert, because a lead who opted out and was then deleted
+ * would otherwise walk straight back in through the next search.
+ */
 async function importDataset(searchId: number, rows: Record<string, unknown>[]) {
+  const emails = rows
+    .map((row) => normalizeEmail(str(row, 'email') ?? ''))
+    .filter((email) => email.includes('@'))
+  const blocked = await suppressedAmong(emails)
+
   let imported = 0
   for (const row of rows) {
-    const email = str(row, 'email')
-    if (!email || !email.includes('@')) continue
+    const email = normalizeEmail(str(row, 'email') ?? '')
+    if (!email.includes('@') || blocked.has(email)) continue
     const result = (await db()`
       insert into leads (
         search_id, email, first_name, last_name, full_name, job_title, seniority, linkedin,
         phone, city, country, company_name, company_domain, company_website, company_linkedin,
         company_size, industry, company_description, raw
       ) values (
-        ${searchId}, ${email.toLowerCase()}, ${str(row, 'first_name')}, ${str(row, 'last_name')},
+        ${searchId}, ${email}, ${str(row, 'first_name')}, ${str(row, 'last_name')},
         ${str(row, 'full_name')}, ${str(row, 'job_title')}, ${str(row, 'seniority_level')},
         ${str(row, 'linkedin')}, ${str(row, 'mobile_number')}, ${str(row, 'city')},
         ${str(row, 'country')}, ${str(row, 'company_name')}, ${str(row, 'company_domain')},
@@ -142,19 +157,77 @@ export async function draftForEnrollment(
   return message.id
 }
 
-/** Send one approved message and move its enrollment to the next step. */
-export async function sendMessage(messageId: number) {
+/**
+ * How long a lead is left alone after any email from us, across every campaign. Five
+ * active campaigns pulling from overlapping searches will happily pick the same person
+ * five times; the recipient sees one sender sending five times, and it is their reaction
+ * that sets our domain reputation, not our campaign structure.
+ */
+export const DEFAULT_LEAD_COOLDOWN_DAYS = 3
+
+export const leadCooldownDays = async () =>
+  Number(await getSetting('lead_cooldown_days', String(DEFAULT_LEAD_COOLDOWN_DAYS))) ||
+  DEFAULT_LEAD_COOLDOWN_DAYS
+
+export type SendOutcome = 'sent' | 'suppressed' | 'cooldown'
+
+/**
+ * Send one approved message and move its enrollment to the next step.
+ *
+ * `force` is the Send-now path: the user picked these rows deliberately, so the pacing
+ * guards step aside. The suppression check never does — that one is the law, not a
+ * deliverability preference.
+ */
+export async function sendMessage(
+  messageId: number,
+  options: { force?: boolean } = {},
+): Promise<SendOutcome> {
   const [message] = (await db()`select * from messages where id = ${messageId}`) as Message[]
-  if (!message || message.status === 'sent') return
+  if (!message || message.status === 'sent') return 'sent'
 
   const [row] = (await db()`
-    select l.email, c.mailbox_id
+    select l.email, c.mailbox_id, c.language
       from messages m
       join leads l on l.id = m.lead_id
       join enrollments e on e.id = m.enrollment_id
       join campaigns c on c.id = e.campaign_id
-     where m.id = ${message.id}`) as { email: string; mailbox_id: number | null }[]
+     where m.id = ${message.id}`) as {
+    email: string
+    mailbox_id: number | null
+    language: string
+  }[]
   if (!row) throw new Error('Lead is gone')
+
+  const [blocked] = (await db().query(
+    `select 1 as hit from leads l where l.id = $1 and ${LEAD_IS_SUPPRESSED}`,
+    [message.lead_id],
+  )) as { hit: number }[]
+  if (blocked) {
+    await db()`
+      update messages set status = 'skipped', error = 'Recipient is on the suppression list'
+       where id = ${message.id}`
+    await db()`
+      update enrollments set status = 'stopped'
+       where id = ${message.enrollment_id} and status = 'active'`
+    return 'suppressed'
+  }
+
+  if (!options.force) {
+    const days = await leadCooldownDays()
+    const [recent] = (await db()`
+      select 1 as hit from messages
+       where lead_id = ${message.lead_id} and id <> ${message.id} and status = 'sent'
+         and sent_at > now() - make_interval(days => ${days}::int) limit 1`) as { hit: number }[]
+    if (recent) {
+      // Hold the message rather than drop it: the campaign still wants this email sent,
+      // just not on top of the one that went out yesterday.
+      await db()`
+        update enrollments
+           set next_send_at = now() + make_interval(days => ${days}::int)
+         where id = ${message.enrollment_id}`
+      return 'cooldown'
+    }
+  }
 
   try {
     const sent = await sendEmail({
@@ -163,9 +236,12 @@ export async function sendMessage(messageId: number) {
       body: message.body,
       messageId: message.id,
       mailboxId: row.mailbox_id,
+      language: row.language,
     })
     await db()`
-      update messages set status = 'sent', provider_id = ${sent.id}, sent_at = now(), error = null
+      update messages
+         set status = 'sent', provider_id = ${sent.id}, sent_at = now(), error = null,
+             mailbox_id = ${row.mailbox_id}
        where id = ${message.id}`
   } catch (error) {
     await db()`update messages set status = 'failed', error = ${String(error)} where id = ${message.id}`
@@ -183,18 +259,55 @@ export async function sendMessage(messageId: number) {
     step: number
     steps: { delay_days: number }[]
   }[]
-  if (!enrollment) return
+  if (!enrollment) return 'sent'
 
   const next = enrollment.step + 1
   if (next >= enrollment.steps.length) {
     await db()`update enrollments set status = 'done', step = ${next} where id = ${enrollment.id}`
-    return
+    return 'sent'
   }
   const days = Number(enrollment.steps[next]?.delay_days ?? 3)
   await db()`
     update enrollments
        set step = ${next}, next_send_at = now() + make_interval(days => ${days}::int)
      where id = ${enrollment.id}`
+  return 'sent'
+}
+
+/**
+ * How many emails one mailbox may send in a day, and how many this pass may use.
+ *
+ * 30-50 per warmed mailbox per day is the accepted band; experienced senders sit at 40,
+ * and above 50 domain-level reputation damage climbs sharply. A domain running three to
+ * five mailboxes lands at 100-250/day, which is the other published ceiling — so capping
+ * per mailbox gets both right without a second setting. The cron fires twice daily, so a
+ * single pass takes half the day's allowance and leaves the rest for the other run.
+ */
+export const DEFAULT_DAILY_SEND_CAP = 40
+
+export const dailySendCap = async () =>
+  Number(await getSetting('daily_send_cap', String(DEFAULT_DAILY_SEND_CAP))) ||
+  DEFAULT_DAILY_SEND_CAP
+
+/** Mailbox id (0 = the env fallback) -> how many more emails this pass may send from it. */
+async function sendAllowance(): Promise<(mailboxId: number) => number> {
+  const cap = await dailySendCap()
+  const perPass = Math.ceil(cap / 2)
+
+  // Rolling 24 hours, not "today": the 07:00 pass must not be handed a fresh allowance
+  // by a midnight it never saw. Rows predating the mailbox_id column fall into the
+  // default bucket, which is where they were sent from.
+  const used = (await db()`
+    select coalesce(m.mailbox_id, (select id from mailboxes where is_default order by id limit 1), 0)
+             as mailbox_id,
+           count(*)::int as sent
+      from messages m
+     where m.status = 'sent' and m.sent_at > now() - interval '24 hours'
+     group by 1`) as { mailbox_id: number; sent: number }[]
+
+  const sentPerMailbox = new Map(used.map((row) => [row.mailbox_id, row.sent]))
+  return (mailboxId) =>
+    Math.max(0, Math.min(perPass, cap - (sentPerMailbox.get(mailboxId) ?? 0)))
 }
 
 const ENROL_LIMIT = 500
@@ -266,14 +379,20 @@ export async function runCampaign(
   report({ phase: 'Enrolling leads from the source searches' })
   let enrolled = 0
   if (campaign.source_search_ids.length) {
-    const inserted = (await db()`
-      insert into enrollments (campaign_id, lead_id)
-      select ${campaignId}, l.id from leads l
-       where l.search_id = any(${campaign.source_search_ids}::int[])
-         and l.status <> 'rejected'
-       order by l.id limit ${ENROL_LIMIT}
-      on conflict (campaign_id, lead_id) do nothing
-      returning id`) as { id: number }[]
+    // Suppressed leads are filtered here as well as at send. Cheaper: an enrollment that
+    // never exists is never scored, researched or drafted, and each of those is a paid
+    // model call spent on someone who asked us to stop.
+    const inserted = (await db().query(
+      `insert into enrollments (campaign_id, lead_id)
+       select $1, l.id from leads l
+        where l.search_id = any($2::int[])
+          and l.status <> 'rejected'
+          and not ${LEAD_IS_SUPPRESSED}
+        order by l.id limit $3
+       on conflict (campaign_id, lead_id) do nothing
+       returning id`,
+      [campaignId, campaign.source_search_ids, ENROL_LIMIT],
+    )) as { id: number }[]
     enrolled = inserted.length
   }
 
@@ -351,23 +470,46 @@ export async function runSequences() {
     }
   }
 
-  // Highest-scoring leads go out first, so a partial run still hits the best ones.
+  // Highest-scoring leads go out first, so a partial run still hits the best ones — and
+  // a pass that runs out of allowance has spent it on the best leads, not the first ones.
   const approved = (await db()`
-    select m.id from messages m join enrollments e on e.id = m.enrollment_id
+    select m.id,
+           coalesce(c.mailbox_id, (select id from mailboxes where is_default order by id limit 1), 0)
+             as mailbox_id
+      from messages m
+      join enrollments e on e.id = m.enrollment_id
+      join campaigns c on c.id = e.campaign_id
      where m.status = 'approved'
-     order by e.score desc nulls last, m.created_at limit 100`) as { id: number }[]
+     order by e.score desc nulls last, m.created_at limit 100`) as {
+    id: number
+    mailbox_id: number
+  }[]
 
+  const allowance = await sendAllowance()
+  const left = new Map<number, number>()
   let sent = 0
+  let held = 0
+
   for (const message of approved) {
+    if (!left.has(message.mailbox_id)) left.set(message.mailbox_id, allowance(message.mailbox_id))
+    if (left.get(message.mailbox_id)! <= 0) {
+      held++
+      continue
+    }
     try {
-      await sendMessage(message.id)
-      sent++
+      const outcome = await sendMessage(message.id)
+      if (outcome === 'sent') {
+        left.set(message.mailbox_id, left.get(message.mailbox_id)! - 1)
+        sent++
+      } else {
+        held++
+      }
     } catch (error) {
       console.error('send failed', message.id, error)
     }
   }
 
-  return { drafted: drafted.length, sent }
+  return { drafted: drafted.length, sent, held }
 }
 
 export async function tick() {

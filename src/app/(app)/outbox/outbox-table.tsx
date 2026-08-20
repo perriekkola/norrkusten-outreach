@@ -51,7 +51,9 @@ function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: strin
       <Hint>
         Sends this exact draft to an address of your choosing, subject prefixed with [TEST], from
         the campaign&apos;s mailbox. Untracked and not recorded — no pixel, no rewritten links,
-        and the lead is not marked as contacted.
+        and the lead is not marked as contacted. The unsubscribe line at the bottom is real,
+        though, so you can see what goes out: following it asks you to confirm before it blocks
+        anyone, and the address it names is the lead&apos;s, not yours.
       </Hint>
       {state.ok ? <span className="text-xs text-green-600 dark:text-green-400">{state.ok}</span> : null}
       {state.error ? <span className="text-destructive text-xs">{state.error}</span> : null}
@@ -256,11 +258,25 @@ export function OutboxTable({
                     <TableCell className="max-w-[320px] truncate">{message.subject}</TableCell>
                     <TableCell className="text-muted-foreground truncate text-xs">
                       {message.campaign_name}
+                      {message.auto_send ? (
+                        <div className="mt-0.5 font-medium text-amber-600 dark:text-amber-500">
+                          auto-send
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{message.step + 1}</TableCell>
                     <TableCell>
-                      <Badge variant={message.status === 'approved' ? 'default' : 'secondary'}>
-                        {message.status}
+                      {/* Auto-send drafts are inserted already approved, so the plain
+                          "approved" badge reads as something a person did. It wasn't. */}
+                      <Badge
+                        variant={message.status === 'approved' ? 'default' : 'secondary'}
+                        className={
+                          message.auto_send
+                            ? 'border-transparent bg-amber-500 text-white hover:bg-amber-500'
+                            : undefined
+                        }
+                      >
+                        {message.auto_send ? 'goes out automatically' : message.status}
                       </Badge>
                     </TableCell>
                   </TableRow>
