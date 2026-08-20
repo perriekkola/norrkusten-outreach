@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
+import { PasswordInput } from '@/components/password-input'
 import { Spinner } from '@/components/spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -70,7 +71,7 @@ function MailboxForm({ mailbox, onDone }: { mailbox?: MailboxRow; onDone: () => 
           />
         </Field>
         <Field label={mailbox ? 'Password (leave blank to keep)' : 'Password'}>
-          <Input name="smtp_pass" type="password" autoComplete="new-password" />
+          <PasswordInput name="smtp_pass" autoComplete="new-password" />
         </Field>
         <Field label="IMAP host (for reply detection)">
           <Input name="imap_host" defaultValue={mailbox?.imap_host ?? 'imap.one.com'} />

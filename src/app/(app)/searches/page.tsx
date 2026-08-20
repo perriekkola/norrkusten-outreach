@@ -33,6 +33,8 @@ function summarise(input: Record<string, unknown>) {
 
 export const maxDuration = 300
 
+export const metadata = { title: 'Searches' }
+
 export default async function SearchesPage() {
   // Pull in anything Apify finished since the last look, so the page never shows a
   // stale "running". Cheap: one status call per in-flight run, and a no-op if none.

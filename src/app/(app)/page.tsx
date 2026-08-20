@@ -47,6 +47,8 @@ const TILES = [
   { key: 'campaigns', label: 'Active campaigns', href: '/campaigns' },
 ] as const
 
+export const metadata = { title: 'Dashboard' }
+
 export default async function DashboardPage() {
   let data: Stats | null = null
   let error: string | null = null
