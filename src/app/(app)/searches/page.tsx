@@ -15,7 +15,7 @@ import { db, type Search } from '@/lib/db'
 import { ingestSearches } from '@/lib/engine'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
-import { SearchForm } from './search-form'
+import { NewSearch } from './new-search'
 import { SearchPoller } from './search-poller'
 
 const STATUS_VARIANT = {
@@ -130,7 +130,7 @@ export default async function SearchesPage() {
           </CardContent>
         </Card>
 
-        <SearchForm />
+        <NewSearch />
       </div>
     </>
   )

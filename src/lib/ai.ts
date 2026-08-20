@@ -2,6 +2,16 @@ import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
+import {
+  COMPANY_SIZE,
+  EMAIL_STATUS,
+  FUNCTION,
+  INDUSTRIES,
+  REVENUE,
+  SENIORITY,
+  matchLocations,
+  type Option,
+} from './apify-options'
 import type { Campaign, Lead } from './db'
 import { decodeEscapes } from './format'
 
@@ -447,5 +457,116 @@ export async function draftCampaign(args: {
     guidelines: decodeEscapes(draft.guidelines),
     steps: draft.steps.map((step) => ({ ...step, goal: decodeEscapes(step.goal) })),
     links: args.links,
+  }
+}
+
+/* ------------------------------------------------------------- lead search */
+
+/** The option lists are runtime data, so the tuple type z.enum wants has to be asserted. */
+const oneOf = (values: readonly string[]) => z.enum(values as unknown as [string, ...string[]])
+const valuesOf = (options: Option[]) => options.map((option) => option.value)
+
+/** 'any' rather than an optional field: structured output wants every key present. */
+const REVENUE_CHOICES = ['any', ...REVENUE]
+
+const SearchDraft = z.object({
+  // No max(): a long label is cosmetic and the field is editable, but a length
+  // constraint that fails validation throws away the whole draft.
+  label: z
+    .string()
+    .describe("Internal label for this search, aim for under 40 characters, in the user's language."),
+  contact_job_title: z
+    .array(z.string())
+    .describe(
+      'Job titles, matched as text against the title on the profile. Give the local-language ' +
+        'variants for the target market first, then the common English ones. Five to fifteen: ' +
+        'too few misses people, and a title nobody holds costs nothing.',
+    ),
+  contact_not_job_title: z
+    .array(z.string())
+    .describe('Titles to exclude — interns, students, assistants, anyone who cannot buy.'),
+  seniority_level: z.array(oneOf(valuesOf(SENIORITY))),
+  functional_level: z.array(oneOf(valuesOf(FUNCTION))),
+  contact_location: z
+    .array(z.string())
+    .describe(
+      'Countries, states or regions in lowercase English as Apify spells them ("sweden", ' +
+        '"norway"). Anything more local than a region belongs in contact_city instead.',
+    ),
+  contact_city: z.array(z.string()).describe('Lowercase city names, local spelling ("göteborg").'),
+  company_industry: z.array(oneOf(INDUSTRIES)),
+  company_keywords: z
+    .array(z.string())
+    .describe('Words that should appear in the company description. Lowercase, few, specific.'),
+  company_not_keywords: z.array(z.string()),
+  size: z.array(oneOf(valuesOf(COMPANY_SIZE))),
+  min_revenue: oneOf(REVENUE_CHOICES),
+  max_revenue: oneOf(REVENUE_CHOICES),
+  email_status: z.array(oneOf(valuesOf(EMAIL_STATUS))),
+})
+
+export type SearchDraft = z.infer<typeof SearchDraft>
+
+/** Drafts the Apify filter set from a plain-language brief, for the user to edit. */
+export async function draftSearch(args: {
+  brief: string
+  links: string[]
+  report?: Report
+}): Promise<SearchDraft> {
+  const report = args.report ?? (() => {})
+  // Pages are only worth fetching when the user pasted some; a description needs no web pass.
+  const sources = args.links.length ? await readSources(args.brief, args.links, report) : ''
+  report({ phase: 'Choosing the filters' })
+
+  const message = await anthropic().messages.parse({
+    model: MODEL.campaign,
+    max_tokens: 8000,
+    output_config: { format: zodOutputFormat(SearchDraft) },
+    system: [
+      'You fill in the filters for a B2B contact search that costs money to run and returns',
+      'nothing useful when over-filtered. Every field is ANDed with the others, so each field',
+      'you fill shrinks the result set: be generous inside a field, sparing across fields.',
+      '',
+      'An empty array means no filter on that field, which is usually the right answer. Fill a',
+      'field only when the brief actually implies it.',
+      '',
+      'What people get wrong here:',
+      '- Job titles, seniority and department all at once. The titles already encode the',
+      '  seniority. Add seniority or department only when the titles alone would drag in people',
+      '  who cannot buy, and then keep them wide.',
+      '- Revenue. The underlying data is patchy, so a revenue floor silently drops every company',
+      '  with no figure on file. Leave both at "any" unless the brief names a size in money.',
+      '- Location and city together. Pick the level the brief is written at, not both.',
+      '- Industries by association. The list is fixed and narrow: pick the two to five entries',
+      '  that really cover the buyers, not everything adjacent to the topic.',
+      '',
+      'email_status: validated only. Unverified addresses bounce, and bounces cost the sending',
+      'domain more than the extra leads are worth.',
+    ].join('\n'),
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `Who the user wants to reach:\n${args.brief}`,
+          sources ? `What the pages they gave say:\n${sources}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+      },
+    ],
+  })
+  guardRefusal(message)
+  if (!message.parsed_output) throw new Error('Claude returned no search filters')
+  const draft = message.parsed_output
+  const text = (values: string[]) => values.map(decodeEscapes)
+  return {
+    ...draft,
+    label: decodeEscapes(draft.label),
+    contact_job_title: text(draft.contact_job_title),
+    contact_not_job_title: text(draft.contact_not_job_title),
+    contact_location: matchLocations(draft.contact_location),
+    contact_city: text(draft.contact_city),
+    company_keywords: text(draft.company_keywords),
+    company_not_keywords: text(draft.company_not_keywords),
   }
 }

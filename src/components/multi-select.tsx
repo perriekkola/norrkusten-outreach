@@ -26,13 +26,16 @@ export function MultiSelect({
   options,
   placeholder = 'Select…',
   emptyText = 'No match.',
+  defaultValue,
 }: {
   name: string
   options: readonly string[]
   placeholder?: string
   emptyText?: string
+  /** Only read on mount — remount with a new key to seed it again. */
+  defaultValue?: readonly string[]
 }) {
-  const [selected, setSelected] = useState<string[]>([])
+  const [selected, setSelected] = useState<string[]>([...(defaultValue ?? [])])
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 

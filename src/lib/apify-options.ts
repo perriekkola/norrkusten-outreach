@@ -2241,3 +2241,14 @@ export const LOCATIONS: string[] = [
   "guam, us",
   "palau, us"
 ]
+
+/**
+ * Locations are the one filter too long to put in a model's output schema (1857 entries),
+ * so the model writes them freely and anything Apify would not recognise is dropped here.
+ */
+export function matchLocations(values: readonly string[]): string[] {
+  const known = new Set(LOCATIONS)
+  return [...new Set(values.map((value) => value.trim().toLowerCase()))].filter((value) =>
+    known.has(value),
+  )
+}
