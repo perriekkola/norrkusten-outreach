@@ -2,6 +2,18 @@
 
 export type Option = { value: string; label: string }
 
+/**
+ * The actor's schema puts no `maximum` on `fetch_count`: it defaults to 100 000 and
+ * treats an empty value as "every lead matching the criteria". So this ceiling is ours,
+ * set to the actor's own default — high enough that a real search is never truncated,
+ * low enough that a mistyped filter cannot run away. Billing is per lead *returned*, so
+ * a high ceiling costs nothing unless the leads actually exist.
+ */
+export const ACTOR_MAX_LEADS = 100_000
+
+/** Was 100, which quietly cut most searches off. A search should miss nobody by default. */
+export const DEFAULT_LEADS = 1000
+
 export const SENIORITY: Option[] = [
   {
     "value": "founder",

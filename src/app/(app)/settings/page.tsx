@@ -2,8 +2,10 @@ import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { db, getSetting } from '@/lib/db'
+import { dailySendCap, leadCooldownDays } from '@/lib/engine'
 import { Mailboxes, type MailboxRow } from './mailboxes'
-import { SettingsForm, UserForm } from './settings-form'
+import { SendingLimitsForm, SettingsForm, UserForm } from './settings-form'
+import { Suppressions, type SuppressionRow } from './suppressions'
 
 const KEYS = [
   { name: 'DATABASE_URL', what: 'Postgres (Neon)' },
@@ -23,6 +25,10 @@ export const metadata = { title: 'Settings' }
 
 export default async function SettingsPage() {
   const senderName = await getSetting('sender_name')
+  const [cap, cooldown] = await Promise.all([dailySendCap(), leadCooldownDays()])
+  const suppressions = (await db()`
+    select email, reason, source, created_at from suppressions
+     order by created_at desc limit 500`) as SuppressionRow[]
   // smtp_pass is deliberately not selected — the encrypted value never goes to the client.
   const mailboxes = (await db()`
     select id, name, from_email, reply_to, smtp_host, smtp_port, smtp_user, signature,
@@ -49,6 +55,35 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <Mailboxes mailboxes={mailboxes} />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Sending limits</CardTitle>
+          <CardDescription>
+            What stops the cron mailing everyone at once. These protect the sending domain —
+            once a domain is flagged, every campaign from it lands in spam, including the good
+            ones.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SendingLimitsForm cap={cap} cooldown={cooldown} />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Blocked addresses</CardTitle>
+          <CardDescription>
+            Anyone here is never emailed, never enrolled, and never imported again — the list
+            is keyed by address so it outlives the lead record. Unsubscribes from the link in
+            the email footer are added automatically. Required under GDPR art. 21: an objection
+            to direct marketing has to stick.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Suppressions rows={suppressions} />
         </CardContent>
       </Card>
 

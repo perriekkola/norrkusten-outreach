@@ -17,6 +17,7 @@ import { deleteCampaign, dropWeak, setCampaignStatus, unenroll } from '@/lib/act
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { RunButton } from './run-button'
+import { UNIT, campaignCost, usd } from '@/lib/costs'
 import { db, type Campaign } from '@/lib/db'
 import { CampaignForm } from '../campaign-form'
 
@@ -86,13 +87,48 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
     (row) => row.score !== null && row.score < campaign.min_score,
   ).length
 
+  // What pressing Run now would spend. Research is counted only for leads whose company
+  // has never been researched — it is paid once and reused by every later email and every
+  // other campaign, so counting it per due lead would roughly double the estimate.
+  const [work] = (await db()`
+    select
+      (select count(*) from enrollments
+        where campaign_id = ${campaign.id} and score is null)::int as to_score,
+      (select count(*) from enrollments e join leads l on l.id = e.lead_id
+        where e.campaign_id = ${campaign.id} and e.status = 'active'
+          and e.next_send_at <= now() and e.score >= ${campaign.min_score}::int
+          and l.research is null)::int as to_research,
+      (select count(*) from enrollments e
+        where e.campaign_id = ${campaign.id} and e.status = 'active'
+          and e.next_send_at <= now() and e.score >= ${campaign.min_score}::int
+          and not exists (select 1 from messages m
+                           where m.enrollment_id = e.id and m.step = e.step))::int as to_draft
+  `) as { to_score: number; to_research: number; to_draft: number }[]
+
+  const estimate = campaignCost({
+    toScore: work.to_score,
+    toResearch: work.to_research,
+    toDraft: work.to_draft,
+  })
+
   return (
     <>
       <PageHeader
         title={campaign.name}
         description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
-        <RunButton campaignId={campaign.id} disabled={!campaign.icp.trim()} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <RunButton campaignId={campaign.id} disabled={!campaign.icp.trim()} />
+          <span className="text-muted-foreground text-xs tabular-nums">≈{usd(estimate)}</span>
+          <Hint>
+            Estimated Claude spend for one pass: {work.to_score} to score at ≈{usd(UNIT.qualify)},{' '}
+            {work.to_research} companies to research at ≈{usd(UNIT.research)}, {work.to_draft}{' '}
+            emails to write at ≈{usd(UNIT.draft)}. Research is charged once per company and
+            then reused by every later email and every other campaign, so a second pass over
+            the same leads costs far less. A pass is capped at 25 drafts, so a large backlog
+            takes several — the figure is for this pass.
+          </Hint>
+        </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <ConfirmButton
             action={dropWeak}

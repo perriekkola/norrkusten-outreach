@@ -1,10 +1,11 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DraftButton } from './draft-button'
 import { db, getSetting } from '@/lib/db'
+import { dailySendCap, leadCooldownDays } from '@/lib/engine'
 import { OutboxTable } from './outbox-table'
 
 export type OutboxRow = {
@@ -26,18 +27,105 @@ export type OutboxRow = {
   company_name: string | null
   campaign_name: string
   campaign_id: number
+  auto_send: boolean
 }
 
 const SELECT = `
   select m.id, m.subject, m.body, m.status, m.step, m.sent_at, m.opened_at, m.replied_at,
          m.open_count, m.clicked_at, m.click_count, m.error, l.id as lead_id, l.full_name as lead_name, l.email,
-         l.company_name, c.name as campaign_name, c.id as campaign_id
+         l.company_name, c.name as campaign_name, c.id as campaign_id, c.auto_send
     from messages m
     join leads l on l.id = m.lead_id
     join enrollments e on e.id = m.enrollment_id
     join campaigns c on c.id = e.campaign_id`
 
 export const metadata = { title: 'Outbox' }
+
+/**
+ * The schedule lives in vercel.json and Vercel reads it as UTC, so the local times are
+ * derived rather than typed — printing "07:00" next to a Swedish clock showing 09:00 is
+ * how someone concludes the cron is broken.
+ */
+const CRON_UTC_HOURS = [7, 13]
+
+const localHours = (offset: number) =>
+  CRON_UTC_HOURS.map((hour) => `${String((hour + offset) % 24).padStart(2, '0')}:00`).join(
+    ' and ',
+  )
+
+function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto: number }) {
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-base">How the cron works</CardTitle>
+        <CardDescription>
+          Vercel Cron calls <code>/api/cron</code> twice a day, at{' '}
+          <strong>{CRON_UTC_HOURS.map((h) => `${String(h).padStart(2, '0')}:00`).join(' and ')} UTC</strong>{' '}
+          — {localHours(2)} Swedish summer time, {localHours(1)} in winter. Nothing else runs on
+          a timer; every other button on this site does the same work on demand.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5">
+          <li>Imports any Apify search that finished since the last run.</li>
+          <li>
+            Reads the mailboxes over IMAP. A reply ends that lead&apos;s sequence and skips
+            their pending drafts — deliberately first, so nobody who answered gets written to.
+          </li>
+          <li>
+            Per active campaign: enrols new leads from its source searches, scores the
+            unscored against its ICP, then researches and writes drafts for whatever is due,
+            best score first.
+          </li>
+          <li>
+            Sends every message marked <em>approved</em>, again best score first.
+          </li>
+        </ol>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border p-3">
+            <div className="font-medium tabular-nums">
+              {Math.ceil(cap / 2)} per run · {cap} per day
+            </div>
+            <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+              Per mailbox, counted over a rolling 24 hours. 30–50 a day is the band where a
+              warmed domain stays out of trouble; above 50 reputation damage climbs sharply.
+              Two runs a day means each takes half. Anything over the cap waits for the next
+              run — it is not dropped.
+            </p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <div className="font-medium tabular-nums">
+              {cooldown === 0 ? 'No cooldown' : `${cooldown}-day gap per person`}
+            </div>
+            <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+              Across every campaign. Five campaigns pulling from overlapping searches will
+              pick the same person five times; the recipient just sees one sender mailing
+              them five times.
+            </p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <div className="font-medium">Approval still gates it</div>
+            <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+              The cron sends what is approved. It never approves anything itself — except for
+              campaigns with auto-send on, whose drafts arrive already approved.
+            </p>
+          </div>
+        </div>
+        {auto > 0 ? (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed">
+            <strong>
+              {auto} of the {auto === 1 ? 'email' : 'emails'} waiting below{' '}
+              {auto === 1 ? 'was' : 'were'} written by a campaign with auto-send on.
+            </strong>{' '}
+            Nobody needs to approve {auto === 1 ? 'it' : 'them'} — {auto === 1 ? 'it goes' : 'they go'}{' '}
+            out at the next cron run. Discard {auto === 1 ? 'it' : 'them'}, or pause the
+            campaign, if that is not what you want.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
 
 export default async function OutboxPage() {
   const pending = (await db().query(
@@ -48,6 +136,8 @@ export default async function OutboxPage() {
   )) as OutboxRow[]
 
   const testEmail = await getSetting('test_email')
+  const [cap, cooldown] = await Promise.all([dailySendCap(), leadCooldownDays()])
+  const autoCount = pending.filter((message) => message.auto_send).length
 
   // What the outbox shows has to be what leaves, so the signature is resolved here.
   const signatures = (await db()`
@@ -70,6 +160,8 @@ export default async function OutboxPage() {
       >
         <DraftButton />
       </PageHeader>
+
+      <Schedule cap={cap} cooldown={cooldown} auto={autoCount} />
 
       <Tabs defaultValue="pending">
         <TabsList>
