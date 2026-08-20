@@ -19,6 +19,8 @@ const KEYS = [
   { name: 'CRON_SECRET', what: 'Protects /api/cron' },
 ] as const
 
+export const metadata = { title: 'Settings' }
+
 export default async function SettingsPage() {
   const senderName = await getSetting('sender_name')
   // smtp_pass is deliberately not selected — the encrypted value never goes to the client.

@@ -38,6 +38,13 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+export async function generateMetadata({ params }: PageProps<'/leads/[id]'>) {
+  const { id } = await params
+  const [lead] = (await db()`
+    select full_name, email from leads where id = ${Number(id)}`) as Lead[]
+  return { title: lead ? lead.full_name || lead.email : 'Lead' }
+}
+
 export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
   const { id } = await params
   const [lead] = (await db()`select * from leads where id = ${Number(id)}`) as Lead[]

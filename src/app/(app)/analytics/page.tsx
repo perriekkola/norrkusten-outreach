@@ -35,6 +35,8 @@ type CampaignRow = {
 const percent = (part: number, whole: number) =>
   whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—'
 
+export const metadata = { title: 'Analytics' }
+
 export default async function AnalyticsPage({ searchParams }: PageProps<'/analytics'>) {
   const params = await searchParams
   const campaign = Number(params.campaign) || null

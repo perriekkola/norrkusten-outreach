@@ -44,6 +44,13 @@ const VERDICT_COLOR: Record<string, string> = {
 
 export const maxDuration = 300
 
+export async function generateMetadata({ params }: PageProps<'/campaigns/[id]'>) {
+  const { id } = await params
+  const [campaign] = (await db()`
+    select name from campaigns where id = ${Number(id)}`) as Campaign[]
+  return { title: campaign?.name ?? 'Campaign' }
+}
+
 export default async function CampaignPage({ params }: PageProps<'/campaigns/[id]'>) {
   const { id } = await params
   const [campaign] = (await db()`select * from campaigns where id = ${Number(id)}`) as Campaign[]

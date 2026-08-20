@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { PasswordInput } from '@/components/password-input'
 import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,10 +29,9 @@ export function LoginForm({ firstRun }: { firstRun: boolean }) {
 
       <div className="space-y-2">
         <Label htmlFor="password">Password</Label>
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete={firstRun ? 'new-password' : 'current-password'}
           minLength={firstRun ? 10 : undefined}
           required

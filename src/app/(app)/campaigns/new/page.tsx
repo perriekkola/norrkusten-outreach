@@ -4,6 +4,8 @@ import { NewCampaign } from './new-campaign'
 
 export const maxDuration = 300
 
+export const metadata = { title: 'New campaign' }
+
 export default async function NewCampaignPage() {
   const searches = (await db()`
     select s.id, s.label, count(l.id)::int as leads

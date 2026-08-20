@@ -7,6 +7,8 @@ export type LeadRow = Lead & { contacted: boolean; replied: boolean }
 import { LeadFilters } from './lead-filters'
 import { LeadsTable } from './leads-table'
 
+export const metadata = { title: 'Leads' }
+
 export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
   const params = await searchParams
   const query = typeof params.q === 'string' ? params.q.trim() : ''

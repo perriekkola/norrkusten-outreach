@@ -37,6 +37,8 @@ const SELECT = `
     join enrollments e on e.id = m.enrollment_id
     join campaigns c on c.id = e.campaign_id`
 
+export const metadata = { title: 'Outbox' }
+
 export default async function OutboxPage() {
   const pending = (await db().query(
     // Same order the sender uses, so the queue reads as the order it will go out —

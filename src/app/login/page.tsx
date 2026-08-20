@@ -3,6 +3,8 @@ import { Logo } from '@/components/logo'
 import { currentUser, userCount } from '@/lib/auth'
 import { LoginForm } from './login-form'
 
+export const metadata = { title: 'Sign in' }
+
 export default async function LoginPage() {
   if (await currentUser()) redirect('/')
 

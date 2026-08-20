@@ -9,7 +9,8 @@ const geistSans = Geist({ variable: '--font-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({ variable: '--font-mono', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Norrkusten Outreach',
+  // Pages set a bare title; this suffixes it. `default` covers pages that set none.
+  title: { default: 'Norrkusten Outreach', template: '%s · Norrkusten Outreach' },
   description: 'Find, qualify and reach out to leads for e-learning courses.',
 }
 

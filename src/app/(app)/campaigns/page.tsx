@@ -7,6 +7,8 @@ import { db, type Campaign } from '@/lib/db'
 
 type Row = Campaign & { enrolled: number; sent: number; replied: number }
 
+export const metadata = { title: 'Campaigns' }
+
 export default async function CampaignsPage() {
   const campaigns = (await db()`
     select c.*,

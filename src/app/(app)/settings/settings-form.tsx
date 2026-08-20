@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { PasswordInput } from '@/components/password-input'
 import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,9 +37,8 @@ export function UserForm() {
         </Label>
         <Input id="new-email" name="email" type="email" placeholder="kollega@kumpan.se" required />
       </div>
-      <Input
+      <PasswordInput
         name="password"
-        type="password"
         placeholder="Password (10+)"
         minLength={10}
         required
