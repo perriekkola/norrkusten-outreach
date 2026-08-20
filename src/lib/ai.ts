@@ -515,7 +515,17 @@ export async function draftSearch(args: {
 }): Promise<SearchDraft> {
   const report = args.report ?? (() => {})
   // Pages are only worth fetching when the user pasted some; a description needs no web pass.
-  const sources = args.links.length ? await readSources(args.brief, args.links, report) : ''
+  // readSources is written for campaigns, so the brief carries the steer: price and terms
+  // decide nothing here, and left to itself it goes looking for them.
+  const sources = args.links.length
+    ? await readSources(
+        `${args.brief}\n\nWhat matters is who buys this: the roles that decide, the industries ` +
+          'they work in and the size of company. Price, terms and campaign offers are irrelevant ' +
+          'here — do not go looking for them.',
+        args.links,
+        report,
+      )
+    : ''
   report({ phase: 'Choosing the filters' })
 
   const message = await anthropic().messages.parse({
@@ -559,8 +569,14 @@ export async function draftSearch(args: {
   if (!message.parsed_output) throw new Error('Claude returned no search filters')
   const draft = message.parsed_output
   const text = (values: string[]) => values.map(decodeEscapes)
+  // The prompt says not to stack seniority and department on top of job titles, and the model
+  // still does it now and then. The titles already encode the seniority, and every extra field
+  // is ANDed, so this only ever drops people whose seniority Apify has no value for.
+  const stacked = draft.contact_job_title.length > 0
   return {
     ...draft,
+    seniority_level: stacked ? [] : draft.seniority_level,
+    functional_level: stacked ? [] : draft.functional_level,
     label: decodeEscapes(draft.label),
     contact_job_title: text(draft.contact_job_title),
     contact_not_job_title: text(draft.contact_not_job_title),
