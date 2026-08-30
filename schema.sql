@@ -62,7 +62,10 @@ create table if not exists campaigns (
   language   text not null default 'sv',
   from_name  text,
   auto_send  boolean not null default false,
-  steps      jsonb not null default '[]'::jsonb, -- [{ "delay_days": 0, "goal": "..." }]
+  writing_mode text not null default 'ai',    -- ai | fixed (the same email for everyone)
+  steps      jsonb not null default '[]'::jsonb, -- ai:    [{ "delay_days": 0, "goal": "..." }]
+                                                 -- fixed: [{ "delay_days": 0, "subject": "...",
+                                                 --           "body": "..." }]
   status     text not null default 'active',     -- active | paused
   created_at timestamptz not null default now()
 );
@@ -125,6 +128,10 @@ alter table leads drop column if exists verdict;
 alter table leads drop column if exists reasons;
 alter table leads drop column if exists angle;
 create index if not exists idx_enroll_score on enrollments(campaign_id, score desc nulls last);
+
+-- Not every campaign wants a written-per-lead email. A fixed campaign sends the same
+-- subject and body to everyone, with only the placeholders filled in per lead.
+alter table campaigns add column if not exists writing_mode text not null default 'ai';
 
 -- A campaign pulls its own leads from named searches and gates on a score floor,
 -- so enrolling, scoring and researching stop being manual steps.

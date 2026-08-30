@@ -77,6 +77,38 @@ assert.deepEqual(matchLocations(['sweden', 'Sweden']), ['sweden'], 'duplicates c
 
 // Every shape a scraper hands back for one person has to collapse to one row, because
 // the unique index on leads.email is the only thing stopping the duplicate.
+const { fillTemplate } = await import('../src/lib/format.ts')
+
+// A fixed campaign sends exactly what was typed, with only these filled in per lead.
+const anna = { first_name: 'Anna', full_name: 'Anna Berg', company_name: 'Acme Ab' }
+assert.equal(
+  fillTemplate('Hej {{first_name}}, hur ser det ut hos {{company}}?', anna),
+  'Hej Anna, hur ser det ut hos Acme Ab?',
+  'fills the fields it knows',
+)
+assert.equal(fillTemplate('{{ full_name }}', anna), 'Anna Berg', 'tolerates padding')
+assert.equal(
+  fillTemplate('Hej {{firstname}}', anna),
+  'Hej {{firstname}}',
+  'an unknown field is left visible, not silently blanked',
+)
+// first_name is often missing from a scraped row; the greeting must still read properly.
+assert.equal(
+  fillTemplate('Hej {{first_name}}, ...', { full_name: 'Bo Ek', company_name: null }),
+  'Hej Bo, ...',
+  'falls back to the first word of the full name',
+)
+assert.equal(
+  fillTemplate('Hej {{first_name}}, hur är läget?', { full_name: null, company_name: null }),
+  'Hej, hur är läget?',
+  'no name at all leaves "Hej," rather than "Hej ,"',
+)
+assert.equal(
+  fillTemplate('rad ett\nrad två', anna),
+  'rad ett\nrad två',
+  'newlines survive the whitespace tidy-up',
+)
+
 const { normalizeEmail, unsubscribeNotice } = await import('../src/lib/format.ts')
 for (const raw of [' Per@X.se ', 'PER@X.SE', 'mailto:per@x.se', 'Per Riekkola <Per@X.se>']) {
   assert.equal(normalizeEmail(raw), 'per@x.se', `normalises ${JSON.stringify(raw)}`)
@@ -87,6 +119,10 @@ const notice = unsubscribeNotice('https://e.test/api/u/7-abc', 'sv')
 assert.ok(notice.text.includes('https://e.test/api/u/7-abc'), 'plain text carries the URL')
 assert.ok(notice.html.includes('href="https://e.test/api/u/7-abc"'), 'html links to it')
 assert.ok(/avregistrera/i.test(notice.html), 'Swedish wording for a Swedish campaign')
+assert.ok(
+  !/yrkesroll|företagsdatabas/i.test(notice.text),
+  'the footer is the opt-out line only — the source sentence was deliberately removed',
+)
 assert.ok(/unsubscribe/i.test(unsubscribeNotice('https://e.test/u', 'en').html), 'English fallback')
 
 // The opt-out must never be routed through the click tracker: that reads as a dark

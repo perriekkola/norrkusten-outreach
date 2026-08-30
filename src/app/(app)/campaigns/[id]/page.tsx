@@ -114,17 +114,20 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                            where m.enrollment_id = e.id and m.step = e.step))::int as to_draft
   `) as { to_score: number; to_research: number; to_draft: number }[]
 
+  // A fixed campaign writes nothing and researches nothing, so a pass only ever pays to
+  // score. Quoting the drafting cost anyway would be quoting for work that never happens.
+  const fixed = campaign.writing_mode === 'fixed'
   const estimate = campaignCost({
     toScore: work.to_score,
-    toResearch: work.to_research,
-    toDraft: work.to_draft,
+    toResearch: fixed ? 0 : work.to_research,
+    toDraft: fixed ? 0 : work.to_draft,
   })
 
   return (
     <>
       <PageHeader
         title={campaign.name}
-        description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
+        description={`${campaign.steps.length} steps · ${fixed ? 'fixed email' : 'written per lead'} · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
         <div className="flex shrink-0 items-center gap-1.5">
           <RunButton
@@ -137,12 +140,23 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
           />
           <span className="text-muted-foreground text-xs tabular-nums">≈{usd(estimate)}</span>
           <Hint>
-            Estimated Claude spend for one pass: {work.to_score} to score at ≈{usd(UNIT.qualify)},{' '}
-            {work.to_research} companies to research at ≈{usd(UNIT.research)}, {work.to_draft}{' '}
-            emails to write at ≈{usd(UNIT.draft)}. Research is charged once per company and
-            then reused by every later email and every other campaign, so a second pass over
-            the same leads costs far less. A pass is capped at 25 drafts, so a large backlog
-            takes several — the figure is for this pass.
+            {fixed ? (
+              <>
+                Estimated Claude spend for one pass: {work.to_score} to score at ≈
+                {usd(UNIT.qualify)}. This campaign sends a fixed email, so nothing is
+                researched and nothing is written — once everyone is scored, a pass is free.
+              </>
+            ) : (
+              <>
+                Estimated Claude spend for one pass: {work.to_score} to score at ≈
+                {usd(UNIT.qualify)}, {work.to_research} companies to research at ≈
+                {usd(UNIT.research)}, {work.to_draft} emails to write at ≈{usd(UNIT.draft)}.
+                Research is charged once per company and then reused by every later email and
+                every other campaign, so a second pass over the same leads costs far less. A
+                pass is capped at 25 drafts, so a large backlog takes several — the figure is
+                for this pass.
+              </>
+            )}
           </Hint>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">

@@ -20,11 +20,17 @@ import { LEAD_IS_SUPPRESSED, suppress, unsuppress } from './suppression'
 import { leadFilter } from './leads'
 import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
+/** Something a save needs to ask about afterwards, rather than decide on its own. */
+export type FollowUp =
+  | { kind: 'rescore'; campaignId: number; stale: number }
+  | { kind: 'replaceDrafts'; campaignId: number; pending: number }
+
 type State = {
   error?: string
   ok?: string
-  /** Set when a save changed the ICP and older scores are now against the previous rubric. */
-  rescore?: { campaignId: number; stale: number }
+  /** Changes every save, so the form knows a fresh set of questions arrived. */
+  followUpId?: string
+  followUps?: FollowUp[]
 }
 
 const list = (value: FormDataEntryValue | null) =>
@@ -389,12 +395,33 @@ export async function enrollLeads(formData: FormData) {
 
 /* ---------------------------------------------------------------- campaigns */
 
-function parseSteps(formData: FormData): CampaignStep[] {
+/**
+ * Both shapes are read and both are kept, whichever mode is active.
+ *
+ * The form submits the goal fields and the subject/body fields together, hiding the set
+ * the current mode does not use. Keeping both means switching a campaign to fixed and back
+ * again returns the goals you wrote, instead of quietly discarding them on the way out.
+ * Only the fields the active mode needs decide whether a step counts as filled in.
+ */
+function parseSteps(formData: FormData, mode: string): CampaignStep[] {
   const delays = formData.getAll('step_delay').map(String)
   const goals = formData.getAll('step_goal').map(String)
-  return goals
-    .map((goal, i) => ({ delay_days: Number(delays[i] ?? 0) || 0, goal: goal.trim() }))
-    .filter((step) => step.goal)
+  const subjects = formData.getAll('step_subject').map(String)
+  const bodies = formData.getAll('step_body').map(String)
+
+  const count = Math.max(goals.length, subjects.length, bodies.length)
+  const steps: CampaignStep[] = []
+  for (let i = 0; i < count; i++) {
+    const step = {
+      delay_days: Number(delays[i] ?? 0) || 0,
+      goal: (goals[i] ?? '').trim(),
+      subject: (subjects[i] ?? '').trim(),
+      body: (bodies[i] ?? '').trim(),
+    }
+    const filled = mode === 'fixed' ? Boolean(step.subject && step.body) : Boolean(step.goal)
+    if (filled) steps.push(step)
+  }
+  return steps
 }
 
 export async function saveCampaign(_prev: State, formData: FormData): Promise<State> {
@@ -417,12 +444,38 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
     }
   }
 
+  const writingMode = formData.get('writing_mode') === 'fixed' ? 'fixed' : 'ai'
+  const steps = parseSteps(formData, writingMode)
+
+  // Fixed campaigns send exactly what is typed here, so an empty step is not a draft to be
+  // filled in later — it is an email that cannot be written when the sequence reaches it.
+  if (writingMode === 'fixed' && !steps.length) {
+    return {
+      error:
+        'A fixed campaign needs a subject and a body for every email, including the ' +
+        'follow-ups. Fill those in, or switch back to letting Claude write them.',
+    }
+  }
+
   // Scoring runs once and never again, so a changed rubric leaves every existing score
-  // measured against the old one. Read the previous text before the update overwrites it.
+  // measured against the old one. Read the previous state before the update overwrites it.
   const [before] = id
-    ? ((await db()`select icp from campaigns where id = ${id}`) as { icp: string }[])
+    ? ((await db()`
+        select icp, writing_mode, steps from campaigns where id = ${id}`) as {
+        icp: string
+        writing_mode: string
+        steps: CampaignStep[]
+      }[])
     : []
   const icpChanged = Boolean(before) && before.icp.trim() !== icp
+  // Any change to what goes out invalidates work already queued, not just the mode switch:
+  // editing a fixed campaign's wording leaves the old wording sitting in the outbox.
+  const wordingChanged =
+    Boolean(before) &&
+    (before.writing_mode !== writingMode ||
+      (writingMode === 'fixed' &&
+        JSON.stringify(before.steps.map((s) => [s.subject ?? '', s.body ?? ''])) !==
+          JSON.stringify(steps.map((s) => [s.subject ?? '', s.body ?? '']))))
 
   const values = {
     name,
@@ -439,7 +492,8 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
     language: String(formData.get('language') ?? 'sv'),
     from_name: String(formData.get('from_name') ?? '') || null,
     auto_send: formData.get('auto_send') === 'on',
-    steps: jsonb(parseSteps(formData)),
+    writingMode,
+    steps: jsonb(steps),
   }
 
   if (id) {
@@ -451,28 +505,41 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
              mailbox_id = ${values.mailboxId},
              language = ${values.language},
              from_name = ${values.from_name}, auto_send = ${values.auto_send},
-             steps = ${values.steps}::jsonb
+             writing_mode = ${values.writingMode}, steps = ${values.steps}::jsonb
        where id = ${id}`
     refresh()
 
+    const followUps: FollowUp[] = []
     if (icpChanged) {
       const [stale] = (await db()`
         select count(*)::int as n from enrollments
          where campaign_id = ${id} and score is not null and status <> 'removed'`) as {
         n: number
       }[]
-      if (stale.n > 0) return { ok: 'Saved.', rescore: { campaignId: id, stale: stale.n } }
+      if (stale.n > 0) followUps.push({ kind: 'rescore', campaignId: id, stale: stale.n })
     }
-    return { ok: 'Saved.' }
+    if (wordingChanged) {
+      const [pending] = (await db()`
+        select count(*)::int as n from messages m
+         join enrollments e on e.id = m.enrollment_id
+        where e.campaign_id = ${id} and m.status in ('draft', 'approved')`) as { n: number }[]
+      if (pending.n > 0) {
+        followUps.push({ kind: 'replaceDrafts', campaignId: id, pending: pending.n })
+      }
+    }
+    return followUps.length
+      ? { ok: 'Saved.', followUpId: crypto.randomUUID(), followUps }
+      : { ok: 'Saved.' }
   }
 
   const [created] = (await db()`
     insert into campaigns
       (name, icp, offer, source_search_ids, min_score, guidelines, links, mailbox_id,
-       language, from_name, auto_send, steps)
+       language, from_name, auto_send, writing_mode, steps)
     values (${values.name}, ${values.icp}, ${values.offer}, ${values.sources}::int[],
             ${values.minScore}, ${values.guidelines}, ${values.links}::text[], ${values.mailboxId},
-            ${values.language}, ${values.from_name}, ${values.auto_send}, ${values.steps}::jsonb)
+            ${values.language}, ${values.from_name}, ${values.auto_send}, ${values.writingMode},
+            ${values.steps}::jsonb)
     returning id`) as { id: number }[]
   redirect(`/campaigns/${created.id}`)
 }
@@ -505,6 +572,25 @@ export async function rescoreCampaign(formData: FormData) {
        set score = null, verdict = null, reasons = null, angle = null
      where campaign_id = ${campaignId} and status <> 'removed'
        and id not in (select enrollment_id from messages where status = 'sent')`
+  refresh()
+}
+
+/**
+ * Throws away this campaign's unsent drafts so the new wording is what actually goes out.
+ *
+ * Only ever offered after a save that changed what the emails say. Deleting rather than
+ * rewriting in place is what lets the next pass rebuild them — for a fixed campaign that
+ * costs nothing and happens the moment you press Run now; for a written one it is the same
+ * work the Rewrite button does. Anything already sent is left alone, because it has been.
+ */
+export async function replaceDrafts(formData: FormData) {
+  await requireUser()
+  const campaignId = Number(formData.get('campaignId'))
+  if (!Number.isFinite(campaignId)) return
+  await db()`
+    delete from messages
+     where status in ('draft', 'approved')
+       and enrollment_id in (select id from enrollments where campaign_id = ${campaignId})`
   refresh()
 }
 

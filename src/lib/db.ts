@@ -67,7 +67,17 @@ export type Enrollment = {
   created_at: string
 }
 
-export type CampaignStep = { delay_days: number; goal: string }
+export type CampaignStep = {
+  delay_days: number
+  /** What this email should achieve. Read only when the campaign is written by Claude. */
+  goal: string
+  /** Fixed campaigns only: the literal subject and body, placeholders included. */
+  subject?: string
+  body?: string
+}
+
+/** 'ai' writes a fresh email per lead; 'fixed' sends the same one to everybody. */
+export type WritingMode = 'ai' | 'fixed'
 
 export type Mailbox = {
   id: number
@@ -106,6 +116,7 @@ export type Campaign = {
   /** Which mailbox sends this campaign. Null falls back to the default mailbox. */
   mailbox_id: number | null
   steps: CampaignStep[]
+  writing_mode: WritingMode
   status: 'active' | 'paused'
   created_at: string
 }

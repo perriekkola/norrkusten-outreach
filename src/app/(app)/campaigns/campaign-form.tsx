@@ -25,9 +25,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { rescoreCampaign, saveCampaign } from '@/lib/actions'
+import { replaceDrafts, rescoreCampaign, saveCampaign } from '@/lib/actions'
 import type { CampaignDraft } from '@/lib/ai'
-import type { Campaign, CampaignStep } from '@/lib/db'
+import type { Campaign, CampaignStep, WritingMode } from '@/lib/db'
 
 const DEFAULT_STEPS: CampaignStep[] = [
   {
@@ -53,21 +53,35 @@ export function CampaignForm({
   draft?: CampaignDraft
 }) {
   const [state, action, pending] = useActionState(saveCampaign, {})
+
   /**
-   * A changed rubric does not re-score anything by itself — scoring only ever runs on rows
-   * with no score. Rather than leave that to be discovered, the save asks once, here.
+   * Some saves leave a question behind — a changed rubric does not re-score anything by
+   * itself, and new wording does not touch drafts already queued. They are asked here, one
+   * after another, rather than decided silently.
    *
-   * Derived rather than copied into state: every submit returns a fresh result object, so
-   * comparing against the one that was dismissed reopens the question on the next save
-   * without an effect syncing one piece of state into another.
+   * Derived rather than copied into state: each save returns a fresh id, so the position in
+   * the queue resets on its own and no effect has to sync one piece of state into another.
    */
-  type Rescore = { campaignId: number; stale: number }
-  const [dismissed, setDismissed] = useState<Rescore | null>(null)
-  const askRescore = state.rescore && state.rescore !== dismissed ? state.rescore : null
+  const [seen, setSeen] = useState<{ id?: string; index: number }>({ index: 0 })
+  const index = seen.id === state.followUpId ? seen.index : 0
+  const followUp = state.followUps?.[index] ?? null
+  const nextFollowUp = () => setSeen({ id: state.followUpId, index: index + 1 })
+
+  const [writingMode, setWritingMode] = useState<WritingMode>(campaign?.writing_mode ?? 'ai')
+  const fixed = writingMode === 'fixed'
   const initial = draft ?? campaign
-  const [steps, setSteps] = useState<CampaignStep[]>(
-    initial?.steps?.length ? initial.steps : DEFAULT_STEPS,
-  )
+  const [steps, setSteps] = useState<CampaignStep[]>(() => {
+    const base: CampaignStep[] = initial?.steps?.length ? initial.steps : DEFAULT_STEPS
+    // A revision from Claude rewrites goals and knows nothing about a fixed campaign's
+    // subject and body, so carry those across by position rather than losing them.
+    return draft && campaign
+      ? base.map((step, i) => ({
+          ...step,
+          subject: step.subject ?? campaign.steps[i]?.subject,
+          body: step.body ?? campaign.steps[i]?.body,
+        }))
+      : base
+  })
   const [links, setLinks] = useState<string[]>(
     draft?.links?.length ? draft.links : campaign?.links?.length ? campaign.links : [''],
   )
@@ -319,14 +333,43 @@ export function CampaignForm({
         </label>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="writing_mode" className="flex items-center gap-1.5">
+          How the emails are written
+          <Hint>
+            Claude writing each one is what makes a cold email read as though a person sent
+            it, and it is the setting to keep unless you have a reason not to. Choose the
+            fixed option when the wording has to be exactly what you approved — a legal
+            notice, a price announcement, anything you cannot let a model rephrase. A fixed
+            campaign also costs nothing to write and skips company research entirely.
+          </Hint>
+        </Label>
+        <input type="hidden" name="writing_mode" value={writingMode} />
+        <Select value={writingMode} onValueChange={(value) => setWritingMode(value as WritingMode)}>
+          <SelectTrigger id="writing_mode" className="w-full sm:w-96">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ai">Claude writes each email for the lead</SelectItem>
+            <SelectItem value="fixed">The same email for everyone</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-muted-foreground text-xs">
+          {fixed
+            ? 'Every lead gets exactly what you type below. Scoring still decides who is ' +
+              'written to; nothing is researched and no email is generated.'
+            : 'Claude writes a fresh email per lead from the goal, the offer and the research.'}
+        </p>
+      </div>
+
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <Label className="flex items-center gap-1.5">
             Sequence
             <Hint>
-              Goals, not templates. Claude writes a fresh email per lead from the goal, the
-              offer, the research and the earlier emails in that thread. A reply stops the
-              sequence for that lead automatically.
+              One entry per email, in order. A reply stops the sequence for that lead
+              automatically, whichever way the emails are written. Follow-ups need filling in
+              too — a fixed campaign cannot invent the second email when it gets there.
             </Hint>
           </Label>
           <Button
@@ -358,7 +401,9 @@ export function CampaignForm({
               />
               {index === 0 ? <input type="hidden" name="step_delay" value={0} /> : null}
             </div>
-            <div className="flex-1 space-y-1">
+            {/* Both sets are always in the form, so switching mode and back does not throw
+                away what you wrote for the other one. Hidden fields still submit. */}
+            <div className="flex-1 space-y-1" hidden={fixed}>
               <Label className="flex items-center gap-1 text-xs">
                 Goal of this email
                 {index === 0 ? (
@@ -369,6 +414,39 @@ export function CampaignForm({
                 ) : null}
               </Label>
               <Textarea name="step_goal" rows={2} defaultValue={step.goal} />
+            </div>
+
+            <div className="flex-1 space-y-2" hidden={!fixed}>
+              <div className="space-y-1">
+                <Label className="flex items-center gap-1 text-xs">
+                  Subject
+                  {index === 0 ? (
+                    <Hint>
+                      Sent exactly as typed. {'{{first_name}}'}, {'{{full_name}}'} and{' '}
+                      {'{{company}}'} are filled in per lead; anything else is left alone, so a
+                      typo shows up in a test send rather than going out blank.
+                    </Hint>
+                  ) : null}
+                </Label>
+                <Input name="step_subject" defaultValue={step.subject ?? ''} />
+              </div>
+              <div className="space-y-1">
+                <Label className="flex items-center gap-1 text-xs">
+                  Body
+                  {index === 0 ? (
+                    <Hint>
+                      Plain text, no sign-off — the mailbox signature and the opt-out line are
+                      added underneath automatically, so writing your own would produce two.
+                    </Hint>
+                  ) : null}
+                </Label>
+                <Textarea
+                  name="step_body"
+                  rows={8}
+                  defaultValue={step.body ?? ''}
+                  placeholder={'Hej {{first_name}},\n\n…\n\nhttps://norrkusten.se/kurser/...'}
+                />
+              </div>
             </div>
             <Button
               type="button"
@@ -383,39 +461,69 @@ export function CampaignForm({
         ))}
       </div>
 
-      <AlertDialog
-        open={askRescore !== null}
-        onOpenChange={(open) => !open && setDismissed(state.rescore ?? null)}
-      >
+      {/* One dialog, driven by whichever question is at the front of the queue. */}
+      <AlertDialog open={followUp !== null} onOpenChange={(open) => !open && nextFollowUp()}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Re-score against the new targeting?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You changed who this campaign targets. {askRescore?.stale} lead
-              {askRescore?.stale === 1 ? ' is' : 's are'} still scored against the old wording,
-              and scoring never runs twice on its own — without this they keep their old
-              numbers and only new leads get the new rubric. Anyone already emailed keeps
-              their score either way. Re-scoring costs nothing now; the next passes do the
-              work and the campaign shows the estimate first.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Only score new leads</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const target = askRescore
-                setDismissed(state.rescore ?? null)
-                if (!target) return
-                const data = new FormData()
-                data.set('campaignId', String(target.campaignId))
-                // The page refreshes from the server either way, so the Score column is the
-                // feedback; catch only so a failure is not an unhandled rejection.
-                void rescoreCampaign(data).catch(console.error)
-              }}
-            >
-              Re-score all {askRescore?.stale}
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          {followUp?.kind === 'rescore' ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Re-score against the new targeting?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  You changed who this campaign targets. {followUp.stale} lead
+                  {followUp.stale === 1 ? ' is' : 's are'} still scored against the old
+                  wording, and scoring never runs twice on its own — without this they keep
+                  their old numbers and only new leads get the new rubric. Anyone already
+                  emailed keeps their score either way. Re-scoring costs nothing now; the next
+                  passes do the work and the campaign shows the estimate first.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Only score new leads</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    const data = new FormData()
+                    data.set('campaignId', String(followUp.campaignId))
+                    nextFollowUp()
+                    // The page refreshes from the server either way, so the Score column is
+                    // the feedback; catch only so a failure is not an unhandled rejection.
+                    void rescoreCampaign(data).catch(console.error)
+                  }}
+                >
+                  Re-score all {followUp.stale}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : null}
+
+          {followUp?.kind === 'replaceDrafts' ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Replace the emails already waiting?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  You changed what this campaign sends, but {followUp.pending} email
+                  {followUp.pending === 1 ? '' : 's'} in the outbox{' '}
+                  {followUp.pending === 1 ? 'was' : 'were'} written under the old settings and
+                  {followUp.pending === 1 ? ' is' : ' are'} still queued exactly as before —
+                  including anything already approved. Replacing throws those away so the next
+                  pass writes them again; press Run now, or wait for the cron. Nothing already
+                  sent is touched.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Leave them as they are</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    const data = new FormData()
+                    data.set('campaignId', String(followUp.campaignId))
+                    nextFollowUp()
+                    void replaceDrafts(data).catch(console.error)
+                  }}
+                >
+                  Replace {followUp.pending}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : null}
         </AlertDialogContent>
       </AlertDialog>
 

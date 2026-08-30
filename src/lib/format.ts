@@ -27,6 +27,40 @@ export function decodeEscapes(text: string): string {
  */
 export const looksMangled = (text: string) => /\p{Ll}\n\p{Ll}/u.test(text)
 
+/** What a fixed campaign may drop into its subject or body. */
+export const TEMPLATE_FIELDS = ['first_name', 'full_name', 'company'] as const
+
+/**
+ * Fills the placeholders in a fixed campaign's subject or body.
+ *
+ * A truly byte-identical email to three hundred people reads as a mailshot and looks like
+ * one to a spam filter, so the few fields worth varying are substituted here. Everything
+ * else is passed through untouched — this is deliberately not a template language.
+ *
+ * Unknown placeholders are left alone rather than blanked: seeing {{firstname}} arrive in
+ * a test send is how you find the typo, whereas a silent empty string is not.
+ */
+export function fillTemplate(
+  text: string,
+  lead: { first_name?: string | null; full_name?: string | null; company_name?: string | null },
+): string {
+  const first = (lead.first_name || lead.full_name?.split(/\s+/)[0] || '').trim()
+  const values: Record<string, string> = {
+    first_name: first,
+    full_name: (lead.full_name || first || '').trim(),
+    company: (lead.company_name || '').trim(),
+  }
+  // The optional leading space is captured so an empty value can take it with it: a lead
+  // with no first name turns "Hej {{first_name}}," into "Hej," rather than "Hej ,".
+  // Tidying the whole string afterwards instead would eat legitimate spacing, such as the
+  // one in ", ...".
+  return text.replace(/([^\S\n]?)\{\{\s*(\w+)\s*\}\}/g, (whole, space: string, field: string) => {
+    if (!(field in values)) return whole
+    const value = values[field]
+    return value ? `${space}${value}` : ''
+  })
+}
+
 /** The signature is configuration, not something to regenerate per email. */
 export function withSignature(body: string, signature: string) {
   const trimmed = signature.trim()
@@ -48,40 +82,32 @@ export function normalizeEmail(raw: string): string {
 }
 
 /**
- * The legally obliged footer, and nothing beyond it.
+ * The opt-out footer.
  *
  * ePrivacy 2002/58/EC art. 13(4) forbids marketing email without a valid address for
- * asking that it stop. Swedish marknadsföringslagen (2008:486) §§19-21 allows B2B
- * without prior consent but requires that opt-out, an identifiable sender, and — with
- * no existing customer relationship — where the address came from. GDPR art. 14 wants
- * the same source disclosure and art. 21(4) the right to object, stated at first
- * contact. One sentence covers all four; the sender's identity is the signature above.
+ * asking that it stop, and Swedish marknadsföringslagen (2008:486) §§19-21 requires the
+ * same alongside an identifiable sender — the signature above covers the sender.
+ *
+ * It used to carry a second sentence naming where the address came from, which is what
+ * GDPR art. 14 asks for when there is no existing customer relationship. Per asked for
+ * the one line only on 2026-08-30. Putting the source disclosure back is a one-line
+ * change here if that turns out to be wanted.
  */
 const NOTICE = {
-  sv: {
-    source:
-      'Du får det här mejlet i din yrkesroll. Adressen kommer från en offentlig företagsdatabas.',
-    lead: 'Vill du inte bli kontaktad igen',
-    label: 'avregistrera dig',
-  },
-  en: {
-    source:
-      'You are receiving this in your professional capacity. Your address came from a public business database.',
-    lead: 'If you would rather not hear from us',
-    label: 'unsubscribe',
-  },
+  sv: { lead: 'Vill du inte bli kontaktad igen', label: 'avregistrera dig' },
+  en: { lead: 'If you would rather not hear from us', label: 'unsubscribe' },
 } as const
 
 export function unsubscribeNotice(url: string, language = 'sv') {
   const copy = NOTICE[language as keyof typeof NOTICE] ?? NOTICE.en
   return {
-    text: `\n\n—\n${copy.source} ${copy.lead}: ${url}`,
+    text: `\n\n—\n${copy.lead}: ${url}`,
     // Deliberately smaller and grey: obliged to be there, not obliged to compete with
     // the message. Rendered outside textToHtml so the click rewriter never touches it —
     // a click-tracked opt-out reads as a dark pattern and would break one-click POST.
     html:
       `<p style="margin:24px 0 0;padding-top:12px;border-top:1px solid #e6e6e6;` +
-      `font-size:11px;line-height:1.5;color:#8a8a8a">${copy.source} ${copy.lead}: ` +
+      `font-size:11px;line-height:1.5;color:#8a8a8a">${copy.lead}: ` +
       `<a href="${url.replace(/&/g, '&amp;')}" style="color:#8a8a8a">${copy.label}</a>.</p>`,
   }
 }

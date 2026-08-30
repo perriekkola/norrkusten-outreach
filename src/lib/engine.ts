@@ -3,7 +3,7 @@ import { getDatasetItems, getRun } from './apify'
 import { describeApiError, draftEmailChecked, qualifyLead, researchCompany } from './ai'
 import { db, getSetting, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
-import { normalizeEmail } from './format'
+import { fillTemplate, normalizeEmail } from './format'
 import { checkReplies } from './replies'
 import { LEAD_IS_SUPPRESSED, suppressedAmong } from './suppression'
 
@@ -116,6 +116,26 @@ export async function draftForEnrollment(
 
   const [lead] = (await db()`select * from leads where id = ${row.lead_id}`) as Lead[]
   if (!lead) return null
+
+  // A fixed campaign has nothing to write. Returning here skips the research too, which is
+  // the expensive half of a draft and would be paid for a paragraph nobody reads.
+  if (campaign.writing_mode === 'fixed') {
+    const step = campaign.steps[row.step]
+    const subject = fillTemplate(step.subject ?? '', lead)
+    const body = fillTemplate(step.body ?? '', lead)
+    if (!subject.trim() || !body.trim()) {
+      throw new Error(`Step ${row.step + 1} of "${campaign.name}" has no subject or body`)
+    }
+    report({ phase: 'Preparing', detail: lead.full_name || lead.email })
+    const [fixed] = (await db()`
+      insert into messages (enrollment_id, lead_id, step, subject, body, status)
+      values (${enrollmentId}, ${lead.id}, ${row.step}, ${subject}, ${body},
+              ${campaign.auto_send ? 'approved' : 'draft'})
+      on conflict (enrollment_id, step) do update
+        set subject = excluded.subject, body = excluded.body, status = excluded.status
+      returning id`) as { id: number }[]
+    return fixed.id
+  }
 
   const previous = (await db()`
     select subject, body from messages
