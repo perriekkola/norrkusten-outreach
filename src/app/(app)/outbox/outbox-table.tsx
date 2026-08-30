@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDown, ArrowUp, ChevronRight, ChevronsUpDown } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Fragment, useActionState, useState } from 'react'
@@ -30,6 +30,8 @@ import {
 } from '@/lib/actions'
 import type { RewritePass } from '@/lib/engine'
 import { formatDetail, readProgress, type Progress } from '@/lib/stream'
+import { SortHeader } from '@/components/sortable'
+import { sortRows, type Sort } from '@/lib/sort'
 import { cn } from '@/lib/utils'
 import type { OutboxRow } from './page'
 
@@ -47,7 +49,6 @@ const WRITTEN_AT = new Intl.DateTimeFormat('sv-SE', {
 })
 
 type SortKey = 'lead' | 'subject' | 'campaign' | 'step' | 'status' | 'written'
-type Sort = { key: SortKey; dir: 'asc' | 'desc' }
 
 const sortValue = (message: OutboxRow, key: SortKey): string | number => {
   switch (key) {
@@ -67,43 +68,6 @@ const sortValue = (message: OutboxRow, key: SortKey): string | number => {
 }
 
 /** Third click clears the sort — the unsorted order is the order these actually go out. */
-function SortHeader({
-  label,
-  sortKey,
-  sort,
-  onSort,
-  className,
-}: {
-  label: string
-  sortKey: SortKey
-  sort: Sort | null
-  onSort: (next: Sort | null) => void
-  className?: string
-}) {
-  const active = sort?.key === sortKey
-  const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        className="hover:text-foreground inline-flex items-center gap-1 whitespace-nowrap"
-        onClick={() =>
-          onSort(
-            !active
-              ? { key: sortKey, dir: 'asc' }
-              : sort.dir === 'asc'
-                ? { key: sortKey, dir: 'desc' }
-                : null,
-          )
-        }
-      >
-        {label}
-        <Icon className={cn('size-3', active ? 'opacity-80' : 'opacity-30')} />
-      </button>
-    </TableHead>
-  )
-}
-
 function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: string }) {
   const [state, action, pending] = useActionState(sendTestEmail, {})
 
@@ -187,22 +151,12 @@ export function OutboxTable({
   const [selected, setSelected] = useState<number[]>([])
   const [expanded, setExpanded] = useState<number | null>(null)
   const [approving, setApproving] = useState(false)
-  const [sort, setSort] = useState<Sort | null>(null)
+  const [sort, setSort] = useState<Sort<SortKey> | null>(null)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [rewriteResult, setRewriteResult] = useState<string | null>(null)
   const rewriting = progress !== null
 
-  const rows = sort
-    ? [...messages].sort((a, b) => {
-        const left = sortValue(a, sort.key)
-        const right = sortValue(b, sort.key)
-        const order =
-          typeof left === 'number' && typeof right === 'number'
-            ? left - right
-            : String(left).localeCompare(String(right), 'sv')
-        return sort.dir === 'asc' ? order : -order
-      })
-    : messages
+  const rows = sortRows(messages, sort, sortValue)
 
   /**
    * Rewrite everything selected, however many that is.

@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { db, type Campaign, type Lead } from '@/lib/db'
-import { LEADS_PER_PAGE, leadFilter } from '@/lib/leads'
+import { LEADS_PER_PAGE, LEAD_SORTS, leadFilter } from '@/lib/leads'
+import { orderBy, sortFromParams } from '@/lib/sort'
 
 /** Only what the table draws. `select l.*` also dragged `raw` and `research` — a full
  *  Apify row and a research essay per lead — through the RSC payload for nothing. */
@@ -21,6 +22,9 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
   const query = typeof params.q === 'string' ? params.q.trim() : ''
   const source = Number(params.source) || null
   const page = Math.max(1, Number(params.page) || 1)
+  // Sorting has to happen in the database: ordering the hundred rows on this page would
+  // put the first name on the page in front, not the first name in the search.
+  const sort = sortFromParams(params, Object.keys(LEAD_SORTS) as (keyof typeof LEAD_SORTS)[])
 
   const { where, params: filterParams } = leadFilter({ query, source })
 
@@ -34,7 +38,7 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
                        where m.lead_id = l.id and m.replied_at is not null) as replied
          from leads l
         where ${where}
-        order by l.created_at desc
+        order by ${orderBy(LEAD_SORTS, sort, 'l.created_at desc')}
         limit $3 offset $4`,
       [...filterParams, LEADS_PER_PAGE, (page - 1) * LEADS_PER_PAGE],
     ),
@@ -96,6 +100,7 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
           page={page}
           perPage={LEADS_PER_PAGE}
           filter={{ query, source }}
+          sort={sort}
         />
       )}
     </>

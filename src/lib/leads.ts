@@ -25,3 +25,17 @@ export function leadFilter({ query, source }: LeadFilter) {
 
 /** Rows per page on the Leads list. */
 export const LEADS_PER_PAGE = 100
+
+/**
+ * Sortable columns, and the SQL each one means.
+ *
+ * A whitelist rather than a mapping built from the request: this string is concatenated
+ * into the query, so anything the user can influence has to be matched against a fixed
+ * set first. `contacted` and `replied` are output columns of the list query.
+ */
+export const LEAD_SORTS = {
+  name: 'l.full_name',
+  company: 'l.company_name',
+  title: 'l.job_title',
+  outreach: 'replied, contacted',
+} as const

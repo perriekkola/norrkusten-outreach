@@ -2,52 +2,31 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/page-header'
 import { SubmitButton } from '@/components/submit-button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  deleteCampaign,
-  dropWeak,
-  markEnrollmentReplied,
-  setCampaignStatus,
-  unenroll,
-} from '@/lib/actions'
+import { deleteCampaign, dropWeak, setCampaignStatus } from '@/lib/actions'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { RunButton } from './run-button'
+import { EnrollmentsTable, type EnrollmentRow, type EnrollmentSortKey } from './enrollments-table'
+import { orderBy, sortFromParams } from '@/lib/sort'
 import { UNIT, campaignCost, usd } from '@/lib/costs'
 import { db, type Campaign } from '@/lib/db'
 import { ReviseCampaign } from './revise-campaign'
 
-type EnrollmentRow = {
-  id: number
-  step: number
-  status: string
-  next_send_at: string
-  score: number | null
-  verdict: string | null
-  reasons: string | null
-  lead_id: number
-  full_name: string | null
-  email: string
-  company_name: string | null
-  sent: number
-  opened: number
-}
+/** Sortable columns and the SQL each means. `sent` and `opened` are output columns. */
+const ENROLLMENT_SORTS = {
+  lead: 'l.full_name',
+  company: 'l.company_name',
+  score: 'e.score',
+  step: 'e.step',
+  sent: 'sent',
+  opened: 'opened',
+  status: 'e.status',
+  next: 'e.next_send_at',
+} as const
 
-const VERDICT_COLOR: Record<string, string> = {
-  strong: 'bg-green-500/15 text-green-700 dark:text-green-400',
-  medium: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
-  weak: 'bg-muted text-muted-foreground',
-}
+const ENROLLED_PER_PAGE = 100
 
 export const maxDuration = 300
 
@@ -58,7 +37,7 @@ export async function generateMetadata({ params }: PageProps<'/campaigns/[id]'>)
   return { title: campaign?.name ?? 'Campaign' }
 }
 
-export default async function CampaignPage({ params }: PageProps<'/campaigns/[id]'>) {
+export default async function CampaignPage({ params, searchParams }: PageProps<'/campaigns/[id]'>) {
   const { id } = await params
   const [campaign] = (await db()`select * from campaigns where id = ${Number(id)}`) as Campaign[]
   if (!campaign) notFound()
@@ -77,23 +56,41 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
     is_default: boolean
   }[]
 
+  const query = await searchParams
+  const page = Math.max(1, Number(query.page) || 1)
+  const sort = sortFromParams(query, Object.keys(ENROLLMENT_SORTS) as EnrollmentSortKey[])
+
   // 'removed' rows are hidden, not gone. They exist only to stop the campaign re-enrolling
   // someone who was deliberately taken out, so showing them would be showing plumbing.
-  const enrollments = (await db()`
-    select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons,
-           l.id as lead_id, l.full_name, l.email, l.company_name,
-           (select count(*) from messages m
-             where m.enrollment_id = e.id and m.status = 'sent')::int as sent,
-           (select count(*) from messages m
-             where m.enrollment_id = e.id and m.opened_at is not null)::int as opened
-      from enrollments e join leads l on l.id = e.lead_id
-     where e.campaign_id = ${campaign.id} and e.status <> 'removed'
-     order by e.score desc nulls last, e.next_send_at limit 500`) as EnrollmentRow[]
+  const VISIBLE = `e.campaign_id = $1 and e.status <> 'removed'`
 
-  const unscored = enrollments.filter((row) => row.score === null).length
-  const belowFloor = enrollments.filter(
-    (row) => row.score !== null && row.score < campaign.min_score,
-  ).length
+  const [enrollments, [counts]] = (await Promise.all([
+    db().query(
+      `select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons,
+              l.id as lead_id, l.full_name, l.email, l.company_name,
+              (select count(*) from messages m
+                where m.enrollment_id = e.id and m.status = 'sent')::int as sent,
+              (select count(*) from messages m
+                where m.enrollment_id = e.id and m.opened_at is not null)::int as opened
+         from enrollments e join leads l on l.id = e.lead_id
+        where ${VISIBLE}
+        order by ${orderBy(ENROLLMENT_SORTS, sort, 'e.score desc nulls last, e.next_send_at')}
+        limit $2 offset $3`,
+      [campaign.id, ENROLLED_PER_PAGE, (page - 1) * ENROLLED_PER_PAGE],
+    ),
+    // Counted, not derived from the page: a campaign with 900 enrollments would otherwise
+    // report whatever happened to fit on screen, and the Drop button would undercount.
+    db().query(
+      `select count(*)::int as total,
+              count(*) filter (where e.score is null)::int as unscored,
+              count(*) filter (where e.score is not null and e.score < $2)::int as below
+         from enrollments e where ${VISIBLE}`,
+      [campaign.id, campaign.min_score],
+    ),
+  ])) as [EnrollmentRow[], { total: number; unscored: number; below: number }[]]
+
+  const unscored = counts.unscored
+  const belowFloor = counts.below
 
   // What pressing Run now would spend. Research is counted only for leads whose company
   // has never been researched — it is paid once and reused by every later email and every
@@ -194,111 +191,35 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
 
       <Tabs defaultValue="leads">
         <TabsList>
-          <TabsTrigger value="leads">Enrolled ({enrollments.length})</TabsTrigger>
+          <TabsTrigger value="leads">Enrolled ({counts.total})</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="leads" className="mt-4">
-          <Card className="py-0">
-            <CardContent className="p-0">
-              {enrollments.length === 0 ? (
-                <p className="text-muted-foreground p-8 text-center text-sm">
+          {counts.total === 0 ? (
+            <Card className="py-0">
+              <CardContent className="p-8">
+                <p className="text-muted-foreground text-center text-sm">
                   Nobody enrolled yet — filter by source search on the{' '}
                   <Link href="/leads" className="text-primary underline">
                     Leads
                   </Link>{' '}
                   page.
                 </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Lead</TableHead>
-                      <TableHead className="w-24 text-right">Score</TableHead>
-                      <TableHead className="w-20">Step</TableHead>
-                      <TableHead className="w-24">Sent</TableHead>
-                      <TableHead className="w-24">Opened</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                      <TableHead className="w-32">Next</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {enrollments.map((row) => (
-                      <TableRow
-                        key={row.id}
-                        className={
-                          row.score !== null && row.score < campaign.min_score ? 'opacity-45' : ''
-                        }
-                      >
-                        <TableCell>
-                          <Link href={`/leads/${row.lead_id}`} className="font-medium hover:underline">
-                            {row.full_name || row.email}
-                          </Link>
-                          <div className="text-muted-foreground text-xs">
-                            {row.company_name ?? row.email}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {row.score === null ? (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          ) : (
-                            <span
-                              title={row.reasons ?? ''}
-                              className={`rounded px-2 py-0.5 text-sm font-medium tabular-nums ${
-                                VERDICT_COLOR[row.verdict ?? ''] ?? ''
-                              }`}
-                            >
-                              {row.score}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {Math.min(row.step + 1, campaign.steps.length)}/{campaign.steps.length}
-                        </TableCell>
-                        <TableCell className="tabular-nums">{row.sent}</TableCell>
-                        <TableCell className="tabular-nums">{row.opened}</TableCell>
-                        <TableCell>
-                          <Badge variant={row.status === 'replied' ? 'default' : 'outline'}>
-                            {row.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs">
-                          {row.status === 'active'
-                            ? new Date(row.next_send_at).toLocaleDateString('sv-SE')
-                            : '—'}
-                        </TableCell>
-                        <TableCell className="text-right whitespace-nowrap">
-                          {row.status === 'active' ? (
-                            <ConfirmButton
-                              action={markEnrollmentReplied}
-                              payload={{ enrollmentId: row.id }}
-                              title="Mark this lead as replied?"
-                              description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns are not touched — block the address if you want every campaign to stop."
-                              confirmLabel="Mark replied"
-                              pendingLabel="Saving…"
-                            >
-                              Mark replied
-                            </ConfirmButton>
-                          ) : null}
-                          <ConfirmButton
-                            action={unenroll}
-                            payload={{ enrollmentId: row.id }}
-                            title="Remove this lead from the campaign?"
-                            description="They drop out of this campaign for good, keeping their score and any unsent draft is skipped. The campaign will not pull them back in from its source searches. Enrolling them by hand from the Leads page undoes it."
-                            confirmLabel="Remove"
-                            pendingLabel="Removing…"
-                          >
-                            Remove
-                          </ConfirmButton>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ) : (
+            <EnrollmentsTable
+              rows={enrollments}
+              campaignId={campaign.id}
+              minScore={campaign.min_score}
+              stepCount={campaign.steps.length}
+              total={counts.total}
+              page={page}
+              perPage={ENROLLED_PER_PAGE}
+              sort={sort}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4 space-y-8">
@@ -313,7 +234,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                 payload={{ id: campaign.id }}
                 variant="destructive"
                 title={`Delete "${campaign.name}"?`}
-                description={`This removes the campaign, all ${enrollments.length} enrollments with their scores, and every draft. Emails already sent stay on the leads. The leads themselves are not touched. This cannot be undone.`}
+                description={`This removes the campaign, all ${counts.total} enrollments with their scores, and every draft. Emails already sent stay on the leads. The leads themselves are not touched. This cannot be undone.`}
                 confirmLabel="Delete campaign"
                 pendingLabel="Deleting…"
               >

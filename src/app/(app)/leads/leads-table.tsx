@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { Pager } from '@/components/pager'
+import { SortHeader } from '@/components/sortable'
+import type { Sort } from '@/lib/sort'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Spinner } from '@/components/spinner'
 import { Hint } from '@/components/hint'
@@ -30,6 +33,8 @@ import type { LeadRow } from './page'
 
 const count = (n: number) => n.toLocaleString('sv-SE')
 
+type LeadSortKey = 'name' | 'company' | 'title' | 'outreach'
+
 export function LeadsTable({
   leads,
   campaigns,
@@ -37,6 +42,7 @@ export function LeadsTable({
   page,
   perPage,
   filter,
+  sort,
 }: {
   leads: LeadRow[]
   campaigns: Pick<Campaign, 'id' | 'name'>[]
@@ -44,6 +50,7 @@ export function LeadsTable({
   page: number
   perPage: number
   filter: { query: string; source: number | null }
+  sort: Sort<LeadSortKey> | null
 }) {
   const [selected, setSelected] = useState<number[]>([])
   /** Enrol every row the filter matches, not just the page. Off unless asked for. */
@@ -51,7 +58,6 @@ export function LeadsTable({
   const [busy, setBusy] = useState<string | null>(null)
   const allSelected = selected.length === leads.length && leads.length > 0
   const pages = Math.max(1, Math.ceil(total / perPage))
-  const firstRow = (page - 1) * perPage + 1
 
   function select(ids: number[]) {
     setSelected(ids)
@@ -61,13 +67,23 @@ export function LeadsTable({
   const toggle = (id: number) =>
     select(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
 
-  const href = (target: number) => {
+  /** Filters, sort and page travel together — changing one must not silently drop another. */
+  const url = (next: { page?: number; sort?: Sort<LeadSortKey> | null }) => {
+    const target = next.page ?? page
+    const order = next.sort === undefined ? sort : next.sort
     const params = new URLSearchParams()
     if (filter.query) params.set('q', filter.query)
     if (filter.source) params.set('source', String(filter.source))
+    if (order) {
+      params.set('sort', order.key)
+      params.set('dir', order.dir)
+    }
     if (target > 1) params.set('page', String(target))
     return `/leads${params.size ? `?${params}` : ''}`
   }
+  // A different order means a different first page.
+  const sortHref = (next: Sort<LeadSortKey> | null) => url({ sort: next, page: 1 })
+  const pageHref = (target: number) => url({ page: target })
 
   /** Every bulk action takes the same `leadId[]` payload — except enrolling everything
    *  matching, which sends the filter and lets the database pick the rows. */
@@ -205,9 +221,15 @@ export function LeadsTable({
                     }
                   />
                 </TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead className="w-28">Outreach</TableHead>
+                <SortHeader label="Name" sortKey="name" sort={sort} href={sortHref} />
+                <SortHeader label="Company" sortKey="company" sort={sort} href={sortHref} />
+                <SortHeader
+                  label="Outreach"
+                  sortKey="outreach"
+                  sort={sort}
+                  href={sortHref}
+                  className="w-28"
+                />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -251,51 +273,7 @@ export function LeadsTable({
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-muted-foreground text-xs tabular-nums">
-          {count(firstRow)}–{count(firstRow + leads.length - 1)} of {count(total)}
-        </span>
-        {pages > 1 ? (
-          <div className="flex items-center gap-2">
-            <PageLink to={page - 1} enabled={page > 1} href={href}>
-              Previous
-            </PageLink>
-            <span className="text-muted-foreground text-xs tabular-nums">
-              Page {count(page)} of {count(pages)}
-            </span>
-            <PageLink to={page + 1} enabled={page < pages} href={href}>
-              Next
-            </PageLink>
-          </div>
-        ) : null}
-      </div>
+      <Pager page={page} pages={pages} total={total} shown={leads.length} href={pageHref} />
     </div>
-  )
-}
-
-/** `asChild` hands the props to a Link, and an anchor ignores `disabled` — so at either
- *  end of the range render a real button that is actually unclickable. */
-function PageLink({
-  to,
-  enabled,
-  href,
-  children,
-}: {
-  to: number
-  enabled: boolean
-  href: (page: number) => string
-  children: React.ReactNode
-}) {
-  if (!enabled) {
-    return (
-      <Button size="sm" variant="outline" disabled>
-        {children}
-      </Button>
-    )
-  }
-  return (
-    <Button size="sm" variant="outline" asChild>
-      <Link href={href(to)}>{children}</Link>
-    </Button>
   )
 }
