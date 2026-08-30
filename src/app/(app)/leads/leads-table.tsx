@@ -121,9 +121,9 @@ export function LeadsTable({
               ? `${count(selected.length)} selected`
               : 'Select leads to act on them'}
           <Hint>
-            The raw pool of everything scraped. Campaigns normally pull their own leads from the
-            searches ticked in their settings, so you rarely need this page — it is for adding a
-            hand-picked subset to a campaign that would not otherwise take them.
+            Everything the searches have found. Campaigns normally take their own leads from
+            the searches ticked in their settings. Use this page to hand-pick people for a
+            campaign that would not otherwise reach them.
           </Hint>
         </span>
         {/* Action menus, not form inputs — a <select> that fires on change is the wrong control. */}

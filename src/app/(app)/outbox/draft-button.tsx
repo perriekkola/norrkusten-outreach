@@ -16,9 +16,9 @@ export function DraftButton() {
         {pending ? 'Drafting…' : 'Draft due emails'}
       </Button>
       <Hint>
-        Writes the next email for every enrolled lead whose turn has come, across all campaigns.
-        The same thing each campaign&apos;s Run now does, and the cron does it too — this is just
-        for impatience.
+        Writes the next email for everyone whose turn has come, across every campaign. Each
+        campaign&apos;s Run now does the same for itself, and so does the twice-daily round.
+        This button is for when you do not want to wait.
       </Hint>
       {state.ok ? <span className="text-muted-foreground text-xs">{state.ok}</span> : null}
       {state.error ? <span className="text-destructive text-xs">{state.error}</span> : null}

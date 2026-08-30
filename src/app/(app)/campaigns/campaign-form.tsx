@@ -65,9 +65,9 @@ function Placeholders() {
         })}
       </div>
       <p className="text-muted-foreground text-xs">
-        Filled in per lead. Anything else is left exactly as typed, so a misspelt token
-        arrives visible in a test send instead of going out blank. A lead with no first name
-        leaves &ldquo;Hej,&rdquo; rather than &ldquo;Hej ,&rdquo;.
+        Filled in per lead. Anything else is left exactly as typed, so a misspelt one shows up
+        in a test send instead of going out blank. A lead with no first name leaves
+        &quot;Hej,&quot; and not &quot;Hej ,&quot;.
       </p>
     </div>
   )
@@ -149,8 +149,8 @@ export function CampaignForm({
           <Label htmlFor="from_name" className="flex items-center gap-1.5">
             Sender name
             <Hint>
-              Who signs the emails. This is the signature only — the actual From address comes
-              from the FROM_EMAIL environment variable.
+              The name that signs the emails. The address they are sent from belongs to the
+              mailbox, not here.
             </Hint>
           </Label>
           <Input
@@ -166,9 +166,9 @@ export function CampaignForm({
         <Label className="flex items-center gap-1.5">
           Pull leads from these searches
           <Hint>
-            Every lead from the ticked searches is enrolled and scored automatically each time
-            the campaign runs. Re-run a search later and the new leads join on the next pass.
-            Leave all unticked to enrol by hand from the Leads page instead.
+            Leads from these searches join the campaign and get scored on their own. Run a
+            search again later and the new ones join too. Tick nothing if you would rather add
+            people by hand from the Leads page.
           </Hint>
         </Label>
         <div className="space-y-2 rounded-lg border p-3">
@@ -200,9 +200,8 @@ export function CampaignForm({
         <Label htmlFor="min_score" className="flex items-center gap-1.5">
           Minimum score to contact
           <Hint>
-            The gate on everything downstream. Below this a lead is never researched, drafted or
-            emailed — but it stays enrolled and visible so you can read why it scored low.
-            50 is a reasonable default; raise it if the drafts feel like a stretch.
+            Below this, nobody gets written to. They stay in the list so you can read why they
+            scored low. 50 is a sensible start. Raise it if the emails feel like a stretch.
           </Hint>
         </Label>
         <Input
@@ -224,10 +223,9 @@ export function CampaignForm({
         <Label htmlFor="icp" className="flex items-center gap-1.5">
           Who this campaign targets
           <Hint>
-            The scoring rubric, and the only thing scoring reads besides the scraped lead data.
-            Say who is a strong fit, who is medium, who is a poor fit, and why. Naming who is a
-            poor fit matters as much as who is good — it is what stops competitors and
-            irrelevant industries scoring high.
+            Apart from the lead&apos;s own details, this is the only thing scoring reads. Say
+            who is a strong fit, who is medium and who is a poor fit, with reasons. The poor
+            fits matter most. Leave them out and competitors score high.
           </Hint>
         </Label>
         <Textarea
@@ -248,12 +246,12 @@ export function CampaignForm({
           What you are selling
           <Hint>
             {fixed
-              ? 'Not sent anywhere on its own — with a fixed campaign this is what Claude ' +
-                'reads when you ask it to write or change the emails above. Claude treats it ' +
-                'as fact, so anything inaccurate here can end up in one of them.'
-              : 'Used when writing each email, not when scoring. Claude treats this as fact, ' +
-                'so anything inaccurate here becomes a claim in a real email. Include the ' +
-                'concrete detail worth citing — a deadline, what changes, the specific outcome.'}
+              ? 'Never sent on its own. Claude reads it when you ask for the emails above to ' +
+                'be written or changed, and treats it as fact, so anything wrong here can end ' +
+                'up in one of them.'
+              : 'Read when writing each email, not when scoring. Claude treats it as fact, so ' +
+                'anything wrong here becomes a claim in a real email. Include the detail ' +
+                'worth citing, like a deadline or what changes.'}
           </Hint>
         </Label>
         <Textarea
@@ -271,14 +269,12 @@ export function CampaignForm({
             Links to include
             <Hint>
               {fixed
-                ? 'With a fixed campaign the URL goes in the body itself. These are what ' +
-                  'Claude points at when it writes or changes those emails for you. Any link ' +
-                  'in a sent email is rewritten through a tracker, wherever it came from, so ' +
-                  'clicks show up in Analytics either way.'
-                : 'The pages these emails drive to. Add several when the campaign pitches ' +
-                  'more than one course — Claude picks the most relevant one per email and ' +
-                  'never invents a URL outside this list. Links in sent mail are rewritten ' +
-                  'through a tracker so clicks show up in Analytics.'}
+                ? 'In a fixed campaign the URL goes in the body itself. These are what Claude ' +
+                  'points at when it writes those emails for you. Every link in a sent email ' +
+                  'is tracked, wherever it came from, so clicks reach Analytics either way.'
+                : 'The pages these emails send people to. Add several if the campaign pitches ' +
+                  'more than one course. Claude picks the most relevant one per email and ' +
+                  'never invents a URL outside this list. Clicks show up in Analytics.'}
             </Hint>
           </Label>
           <Button
@@ -318,13 +314,13 @@ export function CampaignForm({
           How the emails should read
           <Hint>
             {fixed
-              ? 'Read only when Claude writes or revises the fixed emails above — nothing ' +
-                'applies it at send time, because the wording is already settled. Say the ' +
-                'tone and what to avoid, and asking for a change will respect it.'
-              : 'Campaign-specific rules that override the defaults — what to ask for, tone, ' +
-                'phrases to avoid. This is the dial to turn when the drafts come out wrong. ' +
-                'Example: "Ask them to read the course page and reply with questions. Never ' +
-                'propose a meeting."'}
+              ? 'Read only when Claude writes or changes the fixed emails above. Nothing ' +
+                'applies it at send time, since the wording is already settled. Say the tone ' +
+                'and what to avoid, and a change you ask for will respect it.'
+              : 'Rules for this campaign that beat the defaults. Tone, what to ask for, ' +
+                'phrases to avoid. Turn this dial when the emails come out wrong. For ' +
+                'example: ask them to read the course page and reply with questions, never ' +
+                'propose a meeting.'}
           </Hint>
         </Label>
         <Textarea
@@ -344,9 +340,9 @@ export function CampaignForm({
           <Label htmlFor="mailbox_id" className="flex items-center gap-1.5">
             Send from
             <Hint>
-              Which mailbox delivers this campaign, and where replies are watched for. Manage
-              these under Settings. &ldquo;Default mailbox&rdquo; follows whichever one is marked
-              default, so it changes if you change that.
+              Which mailbox sends this campaign, and where its replies are read. Manage
+              mailboxes under Settings. &quot;Default mailbox&quot; follows whichever one is
+              marked default, so it moves if you change that.
             </Hint>
           </Label>
           <Select
@@ -398,14 +394,13 @@ export function CampaignForm({
           </label>
           <Hint>
             {fixed
-              ? 'Worth considering for a fixed campaign. Approving each email one by one is ' +
-                'reading your own words back three hundred times — you wrote them. What ' +
-                'approval still gates is who receives them, and that part is a judgement ' +
-                'call the scoring made, not you. Leave this off while you are still checking ' +
-                'the scores; turn it on once the outbox stops surprising you.'
-              : 'Off by default, deliberately. Every email is written per lead by a model, ' +
-                'so the outbox is where you read one before a real person does. Turning this ' +
-                'on sends them at the next automatic round with nobody looking.'}
+              ? 'Worth turning on here. Approving each email is reading your own words back ' +
+                'three hundred times. What approval still catches is who receives them, and ' +
+                'the scoring decided that, not you. Leave it off until the scores stop ' +
+                'surprising you.'
+              : 'Off by default, on purpose. A model writes every email, so the outbox is ' +
+                'where you read one before a real person does. Turn this on and they go out ' +
+                'at the next round with nobody looking.'}
           </Hint>
         </div>
       </div>
@@ -414,11 +409,10 @@ export function CampaignForm({
         <Label htmlFor="writing_mode" className="flex items-center gap-1.5">
           How the emails are written
           <Hint>
-            Claude writing each one is what makes a cold email read as though a person sent
-            it, and it is the setting to keep unless you have a reason not to. Choose the
-            fixed option when the wording has to be exactly what you approved — a legal
-            notice, a price announcement, anything you cannot let a model rephrase. A fixed
-            campaign also costs nothing to write and skips company research entirely.
+            Keep Claude writing each one unless you have a reason not to. That is what makes a
+            cold email read as though a person sent it. Pick the fixed option when the wording
+            has to be exactly what you approved, like a price announcement. A fixed campaign
+            costs nothing to write and skips company research.
           </Hint>
         </Label>
         <input type="hidden" name="writing_mode" value={writingMode} />
@@ -436,8 +430,8 @@ export function CampaignForm({
         </Select>
         <p className="text-muted-foreground text-xs">
           {fixed
-            ? 'Every lead gets exactly what you type below. Scoring still decides who is ' +
-              'written to; nothing is researched and no email is generated.'
+            ? 'Everyone gets exactly what you type below. Scoring still decides who is ' +
+              'written to. Nothing is researched and no email is generated.'
             : 'Claude writes a fresh email per lead from the goal, the offer and the research.'}
         </p>
       </div>
@@ -449,9 +443,9 @@ export function CampaignForm({
           <Label className="flex items-center gap-1.5">
             Sequence
             <Hint>
-              One entry per email, in order. A reply stops the sequence for that lead
-              automatically, whichever way the emails are written. Follow-ups need filling in
-              too — a fixed campaign cannot invent the second email when it gets there.
+              One entry per email, in order. A reply stops the rest for that person on its
+              own. Fill in the follow-ups too. A fixed campaign cannot invent the second email
+              when it gets there.
             </Hint>
           </Label>
           <Button
@@ -470,7 +464,7 @@ export function CampaignForm({
               <Label className="flex items-center gap-1 text-xs">
                 {index === 0 ? 'Send' : 'Wait (days)'}
                 {index === 1 ? (
-                  <Hint>Days to wait after the previous email in this sequence was sent.</Hint>
+                  <Hint>Days to wait after the previous email went out.</Hint>
                 ) : null}
               </Label>
               <Input
@@ -490,8 +484,8 @@ export function CampaignForm({
                 Goal of this email
                 {index === 0 ? (
                   <Hint>
-                    What this email should achieve, in your words. Be specific about what to
-                    avoid too — &ldquo;no product presentation, no price list&rdquo; works.
+                    What this email should achieve, in your words. Say what to avoid as well.
+                    &quot;No product presentation, no price list&quot; works.
                   </Hint>
                 ) : null}
               </Label>
@@ -515,8 +509,8 @@ export function CampaignForm({
                   Body
                   {index === 0 ? (
                     <Hint>
-                      Plain text, no sign-off — the mailbox signature and the opt-out line are
-                      added underneath automatically, so writing your own would produce two.
+                      Plain text, no sign-off. The signature and the opt-out line go
+                      underneath on their own, so writing your own gives you two.
                     </Hint>
                   ) : null}
                 </Label>

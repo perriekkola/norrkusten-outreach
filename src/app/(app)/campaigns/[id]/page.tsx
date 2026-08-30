@@ -139,19 +139,18 @@ export default async function CampaignPage({ params, searchParams }: PageProps<'
           <Hint>
             {fixed ? (
               <>
-                Estimated Claude spend for one pass: {work.to_score} to score at ≈
-                {usd(UNIT.qualify)}. This campaign sends a fixed email, so nothing is
-                researched and nothing is written — once everyone is scored, a pass is free.
+                What one press costs: {work.to_score} to score at about {usd(UNIT.qualify)}
+                each. This campaign sends a fixed email, so nothing is researched and nothing
+                is written. Once everyone is scored, pressing it is free.
               </>
             ) : (
               <>
-                Estimated Claude spend for one pass: {work.to_score} to score at ≈
-                {usd(UNIT.qualify)}, {work.to_research} companies to research at ≈
-                {usd(UNIT.research)}, {work.to_draft} emails to write at ≈{usd(UNIT.draft)}.
-                Research is charged once per company and then reused by every later email and
-                every other campaign, so a second pass over the same leads costs far less. A
-                pass is capped at 25 drafts, so a large backlog takes several — the figure is
-                for this pass.
+                What one press costs: {work.to_score} to score at about {usd(UNIT.qualify)}{' '}
+                each, {work.to_research} companies to research at about {usd(UNIT.research)},
+                and {work.to_draft} emails to write at about {usd(UNIT.draft)}. Research is
+                paid once per company and reused by every later email and every other
+                campaign, so going over the same leads again costs far less. One press writes
+                at most 25 emails, so a big backlog takes several.
               </>
             )}
           </Hint>
@@ -171,9 +170,9 @@ export default async function CampaignPage({ params, searchParams }: PageProps<'
               : `Drop ${belowFloor} below ${campaign.min_score}`}
           </ConfirmButton>
           <Hint>
-            Permanently removes enrollments scoring under the campaign&apos;s minimum, so they
-            stop cluttering the list. Anyone already emailed is kept. Raise the minimum in
-            Settings if you want to cut more.
+            Drops everyone scoring under this campaign&apos;s minimum so they stop cluttering
+            the list, and stops the campaign pulling them back in. Anyone already emailed
+            stays. Raise the minimum above if you want to cut deeper.
           </Hint>
         </div>
         <form action={setCampaignStatus} className="shrink-0">

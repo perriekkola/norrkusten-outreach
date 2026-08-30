@@ -54,8 +54,8 @@ export function LeadFilters({
         <Label className="text-muted-foreground flex items-center gap-1 text-xs">
           Source search
           <Hint>
-            Which Apify run a lead came from. Useful for spot-checking one batch — campaigns pick
-            their own sources, so you rarely need to enrol by hand from here.
+            Which search a lead came from. Handy for checking one batch. Campaigns pick their
+            own searches, so you rarely need to add people by hand from here.
           </Hint>
         </Label>
         <Select

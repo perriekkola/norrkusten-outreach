@@ -74,9 +74,9 @@ export default async function DashboardPage() {
             Run pipeline now
           </ConfirmButton>
           <Hint>
-            Everything the twice-daily round does, right now: bring in finished searches, check replies, run
-            each active campaign, and send approved mail. This is the only button on this page
-            that can deliver an email.
+            Does everything the twice-daily round does, right now. Brings in finished
+            searches, checks replies, runs each active campaign and sends approved mail. This
+            is the only button on this page that can deliver an email.
           </Hint>
         </div>
       </PageHeader>

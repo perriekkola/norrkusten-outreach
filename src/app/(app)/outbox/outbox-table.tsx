@@ -67,7 +67,6 @@ const sortValue = (message: OutboxRow, key: SortKey): string | number => {
   }
 }
 
-/** Third click clears the sort — the unsorted order is the order these actually go out. */
 function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: string }) {
   const [state, action, pending] = useActionState(sendTestEmail, {})
 
@@ -86,11 +85,11 @@ function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: strin
         {pending ? 'Sending…' : 'Send test'}
       </Button>
       <Hint>
-        Sends this exact draft to an address of your choosing, subject prefixed with [TEST], from
-        the campaign&apos;s mailbox. Untracked and not recorded — no pixel, no rewritten links,
-        and the lead is not marked as contacted. The unsubscribe line at the bottom is real,
-        though, so you can see what goes out: following it asks you to confirm before it blocks
-        anyone, and the address it names is the lead&apos;s, not yours.
+        Sends this exact email to an address you choose, from the campaign&apos;s mailbox, with
+        [TEST] in front of the subject. Nothing is tracked or recorded, and the lead is not
+        marked as contacted. The unsubscribe line at the bottom is real so you can see what
+        goes out. Following it asks you to confirm first, and the address it names is the
+        lead&apos;s, not yours.
       </Hint>
       {state.ok ? <span className="text-xs text-green-600 dark:text-green-400">{state.ok}</span> : null}
       {state.error ? <span className="text-destructive text-xs">{state.error}</span> : null}
@@ -232,8 +231,8 @@ export function OutboxTable({
         <span className="text-muted-foreground flex items-center gap-1.5 px-2 text-sm">
           {selected.length ? `${selected.length} selected` : 'Select drafts to act on them'}
           <Hint>
-            Click a row to read the email. Approve puts it in the queue for the next automatic round; Send now
-            delivers immediately. Nothing leaves until you do one of those.
+            Click a row to read the email. Approve queues it for the next round. Send now
+            delivers it straight away. Nothing leaves until you do one of those.
           </Hint>
         </span>
 
@@ -253,11 +252,11 @@ export function OutboxTable({
             {rewriting ? 'Rewriting…' : `Rewrite${selected.length ? ` ${selected.length}` : ''}`}
           </Button>
           <Hint>
-            Throws these drafts away and writes them again from the campaign&apos;s current
-            wording. Changing a guideline or a step goal never touches drafts that already exist,
-            so this is how you apply an edit to work already queued. It works through the whole
-            selection, continuing by itself if that takes more than one pass — the Written
-            column shows which have been redone.
+            Throws these away and writes them again from the campaign&apos;s current wording.
+            Editing a campaign never touches emails already written, so this is how you apply
+            a change to what is already queued. It works through everything you selected,
+            carrying on by itself if that takes more than one go. The Written column shows
+            which have been redone.
           </Hint>
         </div>
 

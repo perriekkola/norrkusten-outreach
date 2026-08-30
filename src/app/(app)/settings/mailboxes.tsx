@@ -88,9 +88,9 @@ function MailboxForm({ mailbox, onDone }: { mailbox?: MailboxRow; onDone: () => 
         <Label className="flex items-center gap-1.5 text-xs">
           Signature
           <Hint>
-            Appended to every email sent from this mailbox. Claude is told not to write a
-            sign-off, so this is the only place a name and closing appear — keep it short, since
-            a long block reads as marketing in a cold email.
+            Added to the bottom of every email from this mailbox. Claude never writes a
+            sign-off, so this is the only place a name and closing appear. Keep it short. A
+            long block reads as marketing in a cold email.
           </Hint>
         </Label>
         <Textarea
@@ -194,9 +194,8 @@ export function Mailboxes({ mailboxes }: { mailboxes: MailboxRow[] }) {
             Add mailbox
           </Button>
           <Hint>
-            Each campaign picks which mailbox sends it, so outreach can come from whoever owns the
-            relationship. Passwords are encrypted with a key derived from AUTH_SECRET — changing
-            that variable means re-entering every password here.
+            Each campaign picks which mailbox sends it, so an email can come from whoever owns
+            the relationship. Passwords are stored encrypted.
           </Hint>
         </div>
       )}

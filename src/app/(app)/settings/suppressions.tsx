@@ -27,10 +27,10 @@ export function Suppressions({ rows }: { rows: SuppressionRow[] }) {
           <Label htmlFor="block-email" className="flex items-center gap-1.5 text-xs">
             Address or @domain
             <Hint>
-              An entry starting with <code>@</code> blocks the whole company —{' '}
-              <code>@example.se</code> stops every address at that domain. Blocking removes the
-              person from every campaign, skips any draft already written for them, and keeps
-              them out of future imports even if a later search finds them again.
+              An entry starting with <code>@</code> blocks the whole company, so{' '}
+              <code>@example.se</code> stops every address there. Blocking takes the person out
+              of every campaign, drops any email already written for them, and keeps them out
+              even if a later search finds them again.
             </Hint>
           </Label>
           <Input id="block-email" name="email" placeholder="namn@företag.se" required />

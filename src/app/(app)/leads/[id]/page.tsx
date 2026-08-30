@@ -66,11 +66,10 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
       >
         <div className="flex shrink-0 items-center gap-1.5">
           <Hint label="How replies stop a sequence">
-            Replies are detected automatically over IMAP and matched by mail headers, so they
-            stop the campaign that was actually answered and leave the others running. When
-            someone answers off-thread — a different address, or by phone — mark it by hand on
-            the campaign below. To stop every campaign at once, block the address from the
-            Leads page instead.
+            Replies are spotted on their own, and matched to the exact email that was
+            answered, so only that campaign stops. If someone answers another way, from a
+            different address or by phone, mark it by hand on the campaign below. To stop
+            every campaign at once, block the address from the Leads page.
           </Hint>
         </div>
       </PageHeader>

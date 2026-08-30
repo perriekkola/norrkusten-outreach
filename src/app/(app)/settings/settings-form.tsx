@@ -37,10 +37,10 @@ export function SendingLimitsForm({ cap, cooldown }: { cap: number; cooldown: nu
           <Label htmlFor="daily_send_cap" className="flex items-center gap-1.5">
             Emails per mailbox per day
             <Hint>
-              Counted over a rolling 24 hours, per sending mailbox, and the cron takes half of
-              it per run. 30–50 is the band a warmed domain can hold; most senders sit at 40.
-              Above 50 the risk of domain-level reputation damage climbs sharply, so this field
-              refuses to go higher. Need more volume? Add mailboxes rather than raising this.
+              Counted per mailbox over the last 24 hours, and each round takes half of it.
+              Most senders sit at 40. Above 50, inbox providers start treating everything from
+              your domain as spam, so this field will not go higher. Want more volume? Add
+              another mailbox instead.
             </Hint>
           </Label>
           <Input
@@ -59,9 +59,9 @@ export function SendingLimitsForm({ cap, cooldown }: { cap: number; cooldown: nu
           <Label htmlFor="lead_cooldown_days" className="flex items-center gap-1.5">
             Days between emails to one person
             <Hint>
-              Applies across every campaign, not per campaign. Without it, five campaigns
-              pulling from overlapping searches will each email the same person — who sees one
-              sender mailing them five times. Send now overrides this; the cron does not.
+              Counted across every campaign at once. Without it, five campaigns drawing on
+              similar searches each email the same person, who sees you mailing them five
+              times. Send now ignores this. The automatic round does not.
             </Hint>
           </Label>
           <Input

@@ -54,9 +54,8 @@ export default async function SearchesPage() {
             Check for results
           </SubmitButton>
           <Hint>
-            Checks whether each running search has finished and brings in the leads. This page
-            already does it on load and every 15 seconds while a search is running, so you rarely
-            need the button.
+            Checks whether a running search has finished and brings in its leads. The page
+            already does this by itself every 15 seconds, so you rarely need the button.
           </Hint>
         </form>
       </PageHeader>

@@ -60,11 +60,10 @@ export function RunButton({ campaignId, blocked }: { campaignId: number; blocked
           {running ? 'Running…' : 'Run now'}
         </Button>
         <Hint label="What Run now does">
-          Three things, for this campaign only: enrol every lead from the ticked searches, score
-          the unscored against this campaign&apos;s profile, then draft the emails that are due —
-          best score first, researching each company as it goes. It never sends. Drafts land in
-          the outbox. Safe to press repeatedly; each pass skips finished work and stops before the
-          server timeout, so large batches need a few clicks.
+          Does this campaign&apos;s work now instead of waiting for the next round. It adds
+          leads from the ticked searches, scores the ones without a score, and writes the
+          emails that are due, best score first. It never sends anything. Press it as often as
+          you like: each go skips work already done, so a big batch takes a few clicks.
         </Hint>
       </div>
 
