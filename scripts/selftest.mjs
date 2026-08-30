@@ -23,6 +23,10 @@ assert.ok(html.includes('<br />'), 'single newline becomes <br>')
 assert.equal((html.match(/<p /g) ?? []).length, 2, 'blank line splits paragraphs')
 assert.ok(!textToHtml('x').includes('<img'), 'no pixel without a URL')
 
+// Undeclared language is why Gmail offered to translate a Swedish email into Swedish.
+assert.ok(textToHtml('Hej').includes('lang="sv"'), 'Swedish unless told otherwise')
+assert.ok(textToHtml('Hi', undefined, undefined, undefined, 'en').includes('lang="en"'), 'lang honoured')
+
 // A test send has no click tracking, and used to have no links either — Gmail linkifies a
 // bare URL for you, Outlook leaves it as text, so it looked fine to the sender and arrived
 // dead for the recipient.

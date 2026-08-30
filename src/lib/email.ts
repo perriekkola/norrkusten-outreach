@@ -117,6 +117,7 @@ export async function sendEmail(args: {
   const mailbox = await resolveMailbox(args.mailboxId)
   const body = withSignature(args.body, mailbox.signature)
   const track = args.track !== false
+  const language = args.language || 'sv'
 
   // Required in every marketing email under ePrivacy art. 13(4) — see unsubscribeNotice.
   // Without a public URL (local dev) there is no link to give, so the notice is omitted
@@ -124,7 +125,7 @@ export async function sendEmail(args: {
   const base = appUrl()
   const unsubUrl =
     args.messageId && base ? `${base}/api/u/${unsubToken(args.messageId)}` : ''
-  const notice = unsubUrl ? unsubscribeNotice(unsubUrl, args.language) : null
+  const notice = unsubUrl ? unsubscribeNotice(unsubUrl, language) : null
 
   const info = await open(mailbox).sendMail({
     from: mailbox.from_email,
@@ -137,16 +138,22 @@ export async function sendEmail(args: {
       track ? pixelUrl(args.messageId) : undefined,
       track ? linkRewriter(args.messageId) : undefined,
       notice?.html,
+      language,
     ),
     // RFC 8058 one-click, plus the mailto ePrivacy actually asks for. Gmail and Outlook
     // surface this as their own Unsubscribe button, which keeps opt-outs out of the
     // spam-report path — the single cheapest thing there is for domain reputation.
-    headers: unsubUrl
-      ? {
-          'List-Unsubscribe': `<mailto:${mailbox.reply_to || mailbox.from_email}?subject=unsubscribe>, <${unsubUrl}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        }
-      : undefined,
+    headers: {
+      // Say the language rather than letting Gmail infer it. Left to guess, it offers to
+      // translate a Swedish email into Swedish, which is the first thing a recipient sees.
+      'Content-Language': language,
+      ...(unsubUrl
+        ? {
+            'List-Unsubscribe': `<mailto:${mailbox.reply_to || mailbox.from_email}?subject=unsubscribe>, <${unsubUrl}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          }
+        : {}),
+    },
   })
 
   if (info.rejected?.length) throw new Error(`Rejected by server: ${info.rejected.join(', ')}`)

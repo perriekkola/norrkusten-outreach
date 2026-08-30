@@ -139,6 +139,14 @@ export function textToHtml(
   /** Pre-rendered trusted markup appended after the body. Never escaped — only ever
    *  unsubscribeNotice().html, which this module builds itself. */
   footerHtml?: string,
+  /**
+   * The language the email is written in, as a BCP-47 tag.
+   *
+   * Without it Gmail guesses from the text and offers to translate when it guesses wrong,
+   * which it does often on a short Swedish email full of proper nouns and a URL. Declaring
+   * it settles the question: the campaign already knows which language it writes in.
+   */
+  lang = 'sv',
 ) {
   const escaped = body
     .replace(/&/g, '&amp;')
@@ -164,5 +172,5 @@ export function textToHtml(
   const pixel = pixelUrl
     ? `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:block;border:0" />`
     : ''
-  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#111">${paragraphs}${footerHtml ?? ''}${pixel}</div>`
+  return `<div lang="${lang}" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#111">${paragraphs}${footerHtml ?? ''}${pixel}</div>`
 }
