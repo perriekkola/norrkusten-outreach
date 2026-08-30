@@ -43,7 +43,7 @@ export function NewSearch() {
           <CardDescription>
             Paste the course page you want to sell, or just describe who to reach. Claude reads any
             page you give it, works out who buys that course, and fills the form below with job
-            titles, industries and locations from Apify&rsquo;s own lists for you to adjust.
+            titles, industries and locations from the available lists for you to adjust.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -72,7 +72,7 @@ export function NewSearch() {
           {error ? <p className="text-destructive text-sm">{error}</p> : null}
           {draft && !generating ? (
             <p className="text-sm text-green-600 dark:text-green-400">
-              Filled in below. Check it before starting — a wrong filter costs an Apify run.
+              Filled in below. Check it before starting — a wrong filter costs a whole search.
             </p>
           ) : null}
         </CardContent>

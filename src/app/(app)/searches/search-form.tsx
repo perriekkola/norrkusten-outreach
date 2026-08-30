@@ -210,7 +210,7 @@ export function SearchForm({ draft }: { draft?: SearchDraft }) {
             <MultiSelect
               name="company_industry"
               options={INDUSTRIES}
-              placeholder="Search Apify's industry list…"
+              placeholder="Search the industry list…"
               emptyText="No industry matches."
               defaultValue={draft?.company_industry}
             />

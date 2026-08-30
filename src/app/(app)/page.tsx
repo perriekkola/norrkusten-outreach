@@ -74,7 +74,7 @@ export default async function DashboardPage() {
             Run pipeline now
           </ConfirmButton>
           <Hint>
-            Everything the twice-daily cron does, right now: import searches, check replies, run
+            Everything the twice-daily round does, right now: bring in finished searches, check replies, run
             each active campaign, and send approved mail. This is the only button on this page
             that can deliver an email.
           </Hint>
@@ -117,7 +117,7 @@ export default async function DashboardPage() {
         {[
           {
             title: '1. Find',
-            body: 'Run an Apify search with your targeting filters. Finished runs import on their own.',
+            body: 'Search for leads matching your filters. Finished searches arrive on their own.',
             href: '/searches',
             cta: 'New search',
           },

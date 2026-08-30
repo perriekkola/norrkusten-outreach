@@ -167,13 +167,15 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
               than a proxy prefetch. Better signal than opens.
             </p>
             <p>
-              <strong className="text-foreground">Replies</strong> are matched over IMAP on the
+              <strong className="text-foreground">Replies</strong> are matched by reading the inbox on the
               actual mail headers, so they are exact — and a reply stops that lead&apos;s sequence
               automatically.
             </p>
             <p>
-              <strong className="text-foreground">Bounces</strong> come back as mail to your inbox
-              with plain SMTP. {funnel.bounced} enrollment(s) are currently marked bounced.
+              <strong className="text-foreground">Bounces</strong> arrive as an ordinary
+              undelivered-mail reply in your inbox rather than being counted here, so this
+              number only moves when one is recorded by hand. {funnel.bounced} lead(s) are
+              currently marked as bounced.
             </p>
           </CardContent>
         </Card>

@@ -47,14 +47,14 @@ export default async function SearchesPage() {
     <>
       <PageHeader
         title="Searches"
-        description="Source leads from Apify. Runs finish in the background — results import automatically."
+        description="Find leads to write to. A search keeps running in the background — the results arrive here on their own."
       >
         <form action={refreshSearches} className="flex shrink-0 items-center gap-1.5">
           <SubmitButton variant="outline" size="sm" pendingLabel="Checking…">
             Check for results
           </SubmitButton>
           <Hint>
-            Asks Apify whether each running search has finished and imports the leads. This page
+            Checks whether each running search has finished and brings in the leads. This page
             already does it on load and every 15 seconds while a search is running, so you rarely
             need the button.
           </Hint>
@@ -105,7 +105,7 @@ export default async function SearchesPage() {
                             action={cancelSearch}
                             payload={{ id: search.id }}
                             title="Cancel this search?"
-                            description="Aborts the Apify run. Leads it already found are lost — Apify still bills for what it fetched."
+                            description="Stops the search. Any leads it had already found are lost, and you are still charged for the ones it fetched before stopping."
                             confirmLabel="Cancel run"
                             pendingLabel="Cancelling…"
                           >

@@ -145,12 +145,17 @@ export function textToHtml(
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-  const linked = linkUrl
-    ? escaped.replace(URL_PATTERN, (url) => {
-        const href = linkUrl(url).replace(/&/g, '&amp;')
-        return `<a href="${href}" style="color:#2249ff">${url}</a>`
-      })
-    : escaped
+  // Always an anchor, whether or not clicks are tracked. Tracking decides where the link
+  // points, never whether there is one: Gmail quietly linkifies a bare URL sitting in HTML
+  // and Outlook does not, so leaving it as text meant a test send looked fine to whoever
+  // wrote it and arrived unclickable for whoever it was sent to.
+  const linked = escaped.replace(URL_PATTERN, (url) => {
+    // The body was escaped first, so an `&` in a query string is `&amp;` by now. Put it
+    // back before building the href, or it goes out double-escaped and 404s.
+    const real = url.replace(/&amp;/g, '&')
+    const href = (linkUrl ? linkUrl(real) : real).replace(/&/g, '&amp;')
+    return `<a href="${href}" style="color:#2249ff">${url}</a>`
+  })
 
   const paragraphs = linked
     .split(/\n{2,}/)

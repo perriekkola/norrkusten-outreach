@@ -45,9 +45,11 @@ const SELECT = `
 export const metadata = { title: 'Outbox' }
 
 /**
- * The schedule lives in vercel.json and Vercel reads it as UTC, so the local times are
+ * The schedule lives in vercel.json and the host reads it as UTC, so the local times are
  * derived rather than typed — printing "07:00" next to a Swedish clock showing 09:00 is
- * how someone concludes the cron is broken.
+ * how someone concludes the automation is broken. Only the local times are ever shown:
+ * whoever reads this page wants to know when to expect email, not which zone a server
+ * keeps its clock in.
  */
 const CRON_UTC_HOURS = [7, 13]
 
@@ -60,28 +62,28 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle className="text-base">How the cron works</CardTitle>
+        <CardTitle className="text-base">What happens on its own</CardTitle>
         <CardDescription>
-          Vercel Cron calls <code>/api/cron</code> twice a day, at{' '}
-          <strong>{CRON_UTC_HOURS.map((h) => `${String(h).padStart(2, '0')}:00`).join(' and ')} UTC</strong>{' '}
-          — {localHours(2)} Swedish summer time, {localHours(1)} in winter. Nothing else runs on
-          a timer; every other button on this site does the same work on demand.
+          Twice a day — at <strong>{localHours(2)}</strong> (an hour earlier, {localHours(1)}, in
+          winter) — the site does a round of work by itself. Nothing else happens on a timer.
+          Every other button here does the same jobs straight away when you press it.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5">
-          <li>Imports any Apify search that finished since the last run.</li>
+          <li>Collects the leads from any search that has finished since last time.</li>
           <li>
-            Reads the mailboxes over IMAP. A reply ends that lead&apos;s sequence and skips
-            their pending drafts — deliberately first, so nobody who answered gets written to.
+            Checks your inbox for replies. Anyone who has answered is taken out of that
+            campaign, and any email still waiting to go to them is dropped. This happens first
+            on purpose, so nobody who replied gets written to again.
           </li>
           <li>
-            Per active campaign: enrols new leads from its source searches, scores the
-            unscored against its ICP, then researches and writes drafts for whatever is due,
-            best score first.
+            For each running campaign: adds any new leads, gives each one a score for how well
+            they match who the campaign is for, then writes the emails that are due — best
+            scores first.
           </li>
           <li>
-            Sends every message marked <em>approved</em>, again best score first.
+            Sends everything you have <em>approved</em>, again best scores first.
           </li>
         </ol>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -90,10 +92,11 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
               {Math.ceil(cap / 2)} per run · {cap} per day
             </div>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-              Per mailbox, counted over a rolling 24 hours. 30–50 a day is the band where a
-              warmed domain stays out of trouble; above 50 reputation damage climbs sharply.
-              Two runs a day means each takes half. Anything over the cap waits for the next
-              run — it is not dropped.
+              Counted per sending address, over the last 24 hours rather than per calendar
+              day. Around 30–50 a day is where an established address stays out of trouble;
+              much above 50 and inbox providers start treating everything from your domain as
+              spam, good campaigns included. Two rounds a day means each takes half. Anything
+              over the limit simply waits for the next round — it is never thrown away.
             </p>
           </div>
           <div className="rounded-lg border p-3">
@@ -101,28 +104,29 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
               {cooldown === 0 ? 'No cooldown' : `${cooldown}-day gap per person`}
             </div>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-              Across every campaign. Five campaigns pulling from overlapping searches will
-              pick the same person five times; the recipient just sees one sender mailing
-              them five times.
+              Counted across every campaign at once. Several campaigns drawing on similar
+              searches will pick the same person more than once — and they do not see five
+              campaigns, they see you mailing them five times in a week.
             </p>
           </div>
           <div className="rounded-lg border p-3">
             <div className="font-medium">Approval still gates it</div>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-              The cron sends what is approved. It never approves anything itself — except for
-              campaigns with auto-send on, whose drafts arrive already approved.
+              Only emails you have approved are sent. Nothing approves itself — apart from
+              campaigns you have switched to send without approval, where the emails arrive
+              ready to go.
             </p>
           </div>
         </div>
         {auto > 0 ? (
           <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed">
             <strong>
-              {auto} of the {auto === 1 ? 'email' : 'emails'} waiting below{' '}
-              {auto === 1 ? 'was' : 'were'} written by a campaign with auto-send on.
+              {auto} of the {auto === 1 ? 'email' : 'emails'} below{' '}
+              {auto === 1 ? 'comes' : 'come'} from a campaign set to send without approval.
             </strong>{' '}
-            Nobody needs to approve {auto === 1 ? 'it' : 'them'} — {auto === 1 ? 'it goes' : 'they go'}{' '}
-            out at the next cron run. Discard {auto === 1 ? 'it' : 'them'}, or pause the
-            campaign, if that is not what you want.
+            {auto === 1 ? 'It goes' : 'They go'} out at the next round without anyone pressing
+            anything. Discard {auto === 1 ? 'it' : 'them'}, or pause the campaign, if that is
+            not what you want.
           </p>
         ) : null}
       </CardContent>
@@ -159,7 +163,7 @@ export default async function OutboxPage() {
     <>
       <PageHeader
         title="Outbox"
-        description="Drafts wait here until you approve them. The cron sends everything approved twice a day — or press Send now."
+        description="Emails wait here until you approve them. Approved ones go out twice a day on their own — or press Send now."
       >
         <DraftButton />
       </PageHeader>

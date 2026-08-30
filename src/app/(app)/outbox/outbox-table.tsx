@@ -232,7 +232,7 @@ export function OutboxTable({
         <span className="text-muted-foreground flex items-center gap-1.5 px-2 text-sm">
           {selected.length ? `${selected.length} selected` : 'Select drafts to act on them'}
           <Hint>
-            Click a row to read the email. Approve queues it for the next cron run; Send now
+            Click a row to read the email. Approve puts it in the queue for the next automatic round; Send now
             delivers immediately. Nothing leaves until you do one of those.
           </Hint>
         </span>

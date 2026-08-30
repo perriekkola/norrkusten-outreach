@@ -405,7 +405,7 @@ export function CampaignForm({
                 'the scores; turn it on once the outbox stops surprising you.'
               : 'Off by default, deliberately. Every email is written per lead by a model, ' +
                 'so the outbox is where you read one before a real person does. Turning this ' +
-                'on sends them at the next cron run with nobody looking.'}
+                'on sends them at the next automatic round with nobody looking.'}
           </Hint>
         </div>
       </div>
@@ -585,7 +585,7 @@ export function CampaignForm({
                   {followUp.pending === 1 ? 'was' : 'were'} written under the old settings and
                   {followUp.pending === 1 ? ' is' : ' are'} still queued exactly as before —
                   including anything already approved. Replacing throws those away so the next
-                  pass writes them again; press Run now, or wait for the cron. Nothing already
+                  pass writes them again; press Run now, or wait for the next automatic round. Nothing already
                   sent is touched.
                 </AlertDialogDescription>
               </AlertDialogHeader>

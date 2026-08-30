@@ -22,6 +22,24 @@ assert.ok(html.includes('&lt;script&gt;'), 'escaped form expected')
 assert.ok(html.includes('<br />'), 'single newline becomes <br>')
 assert.equal((html.match(/<p /g) ?? []).length, 2, 'blank line splits paragraphs')
 assert.ok(!textToHtml('x').includes('<img'), 'no pixel without a URL')
+
+// A test send has no click tracking, and used to have no links either — Gmail linkifies a
+// bare URL for you, Outlook leaves it as text, so it looked fine to the sender and arrived
+// dead for the recipient.
+const untracked = textToHtml('Läs mer:\nhttps://norrkusten.se/kurser/ce')
+assert.ok(
+  untracked.includes('<a href="https://norrkusten.se/kurser/ce"'),
+  'a URL is a link even when clicks are not tracked',
+)
+const tracked = textToHtml('https://norrkusten.se/kurser/ce', undefined, (u) => `https://t.test/c?u=${u}`)
+assert.ok(tracked.includes('href="https://t.test/c?u=https://norrkusten.se/kurser/ce"'), 'tracked href')
+// The body is escaped before URLs are matched, so a query string arrives as &amp;.
+const query = textToHtml('https://norrkusten.se/k?a=1&b=2')
+assert.ok(
+  query.includes('href="https://norrkusten.se/k?a=1&amp;b=2"'),
+  'a query string is escaped exactly once in the href',
+)
+assert.ok(!query.includes('&amp;amp;'), 'and never double-escaped')
 assert.ok(textToHtml('x', 'https://e.test/t/1-a').includes('<img'), 'pixel when URL given')
 
 const { looksMangled } = await import('../src/lib/format.ts')
