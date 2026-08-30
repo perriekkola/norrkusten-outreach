@@ -2,8 +2,15 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { db, type Campaign, type Lead } from '@/lib/db'
+import { LEADS_PER_PAGE, leadFilter } from '@/lib/leads'
 
-export type LeadRow = Lead & { contacted: boolean; replied: boolean }
+/** Only what the table draws. `select l.*` also dragged `raw` and `research` — a full
+ *  Apify row and a research essay per lead — through the RSC payload for nothing. */
+export type LeadRow = Pick<
+  Lead,
+  'id' | 'full_name' | 'email' | 'job_title' | 'company_name' | 'industry' | 'company_size'
+> & { contacted: boolean; replied: boolean }
+
 import { LeadFilters } from './lead-filters'
 import { LeadsTable } from './leads-table'
 
@@ -13,22 +20,26 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
   const params = await searchParams
   const query = typeof params.q === 'string' ? params.q.trim() : ''
   const source = Number(params.source) || null
+  const page = Math.max(1, Number(params.page) || 1)
 
-  const leads = (await db()`
-    select l.*,
-           exists (select 1 from messages m
-                    where m.lead_id = l.id and m.status = 'sent') as contacted,
-           exists (select 1 from messages m
-                    where m.lead_id = l.id and m.replied_at is not null) as replied
-      from leads l
-     where (${source}::int is null or search_id = ${source}::int)
-       and (${query} = '' or
-            full_name ilike ${'%' + query + '%'} or
-            email ilike ${'%' + query + '%'} or
-            company_name ilike ${'%' + query + '%'} or
-            job_title ilike ${'%' + query + '%'})
-     order by created_at desc
-     limit 300`) as LeadRow[]
+  const { where, params: filterParams } = leadFilter({ query, source })
+
+  const [rows, [{ total }]] = (await Promise.all([
+    db().query(
+      `select l.id, l.full_name, l.email, l.job_title, l.company_name, l.industry,
+              l.company_size,
+              exists (select 1 from messages m
+                       where m.lead_id = l.id and m.status = 'sent') as contacted,
+              exists (select 1 from messages m
+                       where m.lead_id = l.id and m.replied_at is not null) as replied
+         from leads l
+        where ${where}
+        order by l.created_at desc
+        limit $3 offset $4`,
+      [...filterParams, LEADS_PER_PAGE, (page - 1) * LEADS_PER_PAGE],
+    ),
+    db().query(`select count(*)::int as total from leads l where ${where}`, filterParams),
+  ])) as [LeadRow[], { total: number }[]]
 
   const campaigns = (await db()`
     select id, name from campaigns where status = 'active' order by name`) as Pick<
@@ -55,18 +66,37 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
         searches={searches}
       />
 
-      {leads.length === 0 ? (
+      {rows.length === 0 ? (
         <Card>
           <CardContent className="text-muted-foreground py-10 text-center text-sm">
-            No leads here yet. Start a{' '}
-            <Link href="/searches" className="text-primary underline">
-              search
-            </Link>{' '}
-            to import some.
+            {total === 0 ? (
+              <>
+                No leads here yet. Start a{' '}
+                <Link href="/searches" className="text-primary underline">
+                  search
+                </Link>{' '}
+                to import some.
+              </>
+            ) : (
+              <>
+                Page {page} is past the end of {total.toLocaleString('sv-SE')} leads —{' '}
+                <Link href="/leads" className="text-primary underline">
+                  back to the first page
+                </Link>
+                .
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
-        <LeadsTable leads={leads} campaigns={campaigns} />
+        <LeadsTable
+          leads={rows}
+          campaigns={campaigns}
+          total={total}
+          page={page}
+          perPage={LEADS_PER_PAGE}
+          filter={{ query, source }}
+        />
       )}
     </>
   )

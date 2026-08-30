@@ -16,7 +16,8 @@ import {
 import { db, jsonb, setSetting, type CampaignStep, type Mailbox } from './db'
 import { forgetMailbox, sendEmail, verifyMailbox } from './email'
 import { encrypt } from './secrets'
-import { suppress, unsuppress } from './suppression'
+import { LEAD_IS_SUPPRESSED, suppress, unsuppress } from './suppression'
+import { leadFilter } from './leads'
 import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
 type State = { error?: string; ok?: string }
@@ -339,10 +340,37 @@ export async function blockLeads(formData: FormData) {
   refresh()
 }
 
+/**
+ * Enrol either the ticked rows, or everything matching the current filter.
+ *
+ * The second mode exists because the ticked rows can only ever be the ones the page
+ * rendered — selecting "all" on a 100-row page of a 975-lead search silently enrolled 100.
+ * Filter mode resolves the rows in the database instead, so what the user was shown as a
+ * count is what they get. It also drops suppressed addresses, which the hand-picked path
+ * leaves alone: bulk enrolling a whole search would otherwise spend scoring and research
+ * money on people who asked us to stop, and send blocks them at the end anyway.
+ */
 export async function enrollLeads(formData: FormData) {
   await requireUser()
   const campaignId = Number(formData.get('campaignId'))
   if (!Number.isFinite(campaignId)) return
+
+  if (formData.get('allMatching')) {
+    const { where, params } = leadFilter({
+      query: String(formData.get('q') ?? ''),
+      source: Number(formData.get('source')) || null,
+    })
+    await db().query(
+      `insert into enrollments (campaign_id, lead_id)
+       select $3, l.id from leads l
+        where ${where} and l.status <> 'rejected' and not ${LEAD_IS_SUPPRESSED}
+       on conflict (campaign_id, lead_id) do nothing`,
+      [...params, campaignId],
+    )
+    refresh()
+    return
+  }
+
   const leadIds = ids(formData)
   if (!leadIds.length) return
   await db()`
@@ -368,9 +396,23 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
   const name = String(formData.get('name') ?? '').trim()
   if (!name) return { error: 'Name is required.' }
 
+  // The single choke point every campaign goes through — AI draft, hand-typed, later edit.
+  // A campaign saved without an ICP has nothing to score against, so scoring is skipped,
+  // every enrollment keeps score = null, `score >= min_score` is never true and the campaign
+  // silently drafts nothing forever. Refusing the save is the only guard that catches all
+  // three paths.
+  const icp = String(formData.get('icp') ?? '').trim()
+  if (!icp) {
+    return {
+      error:
+        'Who this campaign targets is required — it is the rubric every lead is scored ' +
+        'against. Without it nothing is scored, and nothing is ever drafted or sent.',
+    }
+  }
+
   const values = {
     name,
-    icp: String(formData.get('icp') ?? ''),
+    icp,
     sources: formData.getAll('source_search_ids').map(Number).filter(Number.isFinite),
     minScore: Math.max(0, Math.min(100, Number(formData.get('min_score')) || 0)),
     mailboxId: Number(formData.get('mailbox_id')) || null,

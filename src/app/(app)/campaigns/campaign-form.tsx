@@ -144,6 +144,7 @@ export function CampaignForm({
           id="icp"
           name="icp"
           rows={10}
+          required
           defaultValue={initial?.icp}
           placeholder="The scoring rubric for this campaign only. Who is a strong fit, who is medium, who is a poor fit — and why. Claude scores every enrolled lead against this text."
         />

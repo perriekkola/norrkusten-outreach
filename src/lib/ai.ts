@@ -294,10 +294,12 @@ const CampaignDraft = z.object({
     ),
   icp: z
     .string()
+    .min(1)
     .describe(
-      'The scoring rubric. Who is a strong fit (75-100), medium (40-74) and poor (0-39), with ' +
-        'reasons. The poor band must name competitors who sell the same thing, by name where ' +
-        'known, or every lead scores high and the score floor is useless.',
+      'The scoring rubric, and the ONLY field the scoring model reads. Never empty, never one ' +
+        'line. All three bands, always: strong fit (75-100), medium (40-74) and poor (0-39), ' +
+        'each with reasons. The poor band must name competitors who sell the same thing, by ' +
+        'name where known, or every lead scores high and the score floor is useless.',
     ),
   offer: z
     .string()
@@ -380,6 +382,89 @@ async function readSources(brief: string, links: string[], report: Report): Prom
   throw new Error('Reading the sources did not finish — try again')
 }
 
+/** Shared by drafting and revising, so a rule added for one can never be missing from the other. */
+const CAMPAIGN_SYSTEM = [
+  'You set up cold outreach campaigns. Every field you write is consumed by another model',
+  'that treats it as fact, and the result is sent to a real person who may know the subject',
+  'better than you. Write only what the research below establishes.',
+  '',
+  'Claims and sourcing:',
+  '- The offer may contain only what the source pages state. If the page does not give an',
+  '  access period, a guarantee or a term of sale, do not supply one.',
+  '- A dated regulatory deadline is a fact and may be used. Legal consequences derived from',
+  '  it are not: never assert that there is no transition period, that something is mandatory,',
+  '  that a party is liable, or that an authority requires anything, even if it seems to',
+  '  follow. Say what the course covers instead of what the law obliges.',
+  '- Never write a rule about signing off, closing greetings or the sender\'s name. A',
+  '  signature is configured on the mailbox and appended automatically; a guideline telling',
+  '  the writer to sign would contradict that and produce two sign-offs.',
+  '- If the source page makes a marketing superlative ("the most comprehensive in Sweden"),',
+  '  record it in the offer as the page\'s claim, and forbid it in the guidelines. Repeating a',
+  '  superlative to an engineer costs credibility.',
+  '',
+  'The ICP is the one field you must never leave thin or empty. It is the entire rubric',
+  'the scoring model gets — no other field is read when scoring — so a campaign whose ICP',
+  'is blank or one line scores nothing, drafts nothing and sends nothing. Always write all',
+  'three bands in full, even when the brief is short:',
+  '- STRONG (75-100): country, company size, what the company actually does, and the job',
+  '  titles that own the problem. Give the titles in the market\'s own language.',
+  '- MEDIUM (40-74): the right company with the wrong person, or an adjacent use case.',
+  '- POOR (0-39): who never qualifies, competitors who sell the same thing included, by',
+  '  name where you know them. Without that band every lead scores high and the floor is dead.',
+  'If the brief did not tell you enough to fill a band, infer it from the offer and say so',
+  'inside the ICP. Returning an empty or single-sentence ICP is a broken campaign, not a',
+  'cautious one.',
+  '',
+  'One more thing people get wrong: the ask has to match the price. A self-serve product',
+  'costing a few thousand kronor sends people to the page to read and buy. It never asks for',
+  'a meeting, a call or fifteen minutes, and the guidelines must forbid those explicitly.',
+  '',
+  'Shape of the sequence: three emails is the default. Each one makes a different argument —',
+  'if you cannot give a step its own argument, do not add the step. Do not write a fifth.',
+  '',
+  'Pick the source searches from the list given. Leaving that empty produces a campaign that',
+  'silently does nothing, so only do it if no offered search could match the ICP at all.',
+].join('\n')
+
+const searchList = (searches: { id: number; label: string; leads: number }[]) =>
+  searches.length
+    ? 'Searches available as lead sources (pick by id):\n' +
+      searches.map((s) => `- id ${s.id}: "${s.label}" (${s.leads} leads)`).join('\n')
+    : 'No searches exist yet — return an empty source_search_ids.'
+
+/** The structured-output call drafting and revising share, plus the checks on what came back. */
+async function writeCampaign(
+  system: string,
+  content: string,
+  links: string[],
+): Promise<CampaignDraft> {
+  const message = await anthropic().messages.parse({
+    model: MODEL.campaign,
+    max_tokens: 16000,
+    output_config: { format: zodOutputFormat(CampaignDraft) },
+    system,
+    messages: [{ role: 'user', content }],
+  })
+  guardRefusal(message)
+  if (!message.parsed_output) throw new Error('Claude returned no campaign draft')
+  const draft = message.parsed_output
+  // Belt to the prompt's braces. An empty ICP is not a partial draft the user can fix by
+  // editing — it is the one field that decides whether the campaign does anything at all,
+  // so fail loudly here rather than hand back a campaign that silently never sends.
+  if (!draft.icp.trim()) {
+    throw new Error('Claude returned a campaign with no targeting rubric — try again')
+  }
+  return {
+    ...draft,
+    name: decodeEscapes(draft.name),
+    icp: decodeEscapes(draft.icp),
+    offer: decodeEscapes(draft.offer),
+    guidelines: decodeEscapes(draft.guidelines),
+    steps: draft.steps.map((step) => ({ ...step, goal: decodeEscapes(step.goal) })),
+    links,
+  }
+}
+
 /** Drafts every campaign field from a brief and any links, for the user to edit. */
 export async function draftCampaign(args: {
   brief: string
@@ -392,72 +477,80 @@ export async function draftCampaign(args: {
   const sources = await readSources(args.brief, args.links, report)
   report({ phase: 'Writing the targeting, offer and sequence' })
 
-  const message = await anthropic().messages.parse({
-    model: MODEL.campaign,
-    max_tokens: 16000,
-    output_config: { format: zodOutputFormat(CampaignDraft) },
-    system: [
-      'You set up cold outreach campaigns. Every field you write is consumed by another model',
-      'that treats it as fact, and the result is sent to a real person who may know the subject',
-      'better than you. Write only what the research below establishes.',
-      '',
-      'Claims and sourcing:',
-      '- The offer may contain only what the source pages state. If the page does not give an',
-      '  access period, a guarantee or a term of sale, do not supply one.',
-      '- A dated regulatory deadline is a fact and may be used. Legal consequences derived from',
-      '  it are not: never assert that there is no transition period, that something is mandatory,',
-      '  that a party is liable, or that an authority requires anything, even if it seems to',
-      '  follow. Say what the course covers instead of what the law obliges.',
-      '- Never write a rule about signing off, closing greetings or the sender\'s name. A',
-      '  signature is configured on the mailbox and appended automatically; a guideline telling',
-      '  the writer to sign would contradict that and produce two sign-offs.',
-      '- If the source page makes a marketing superlative ("the most comprehensive in Sweden"),',
-      '  record it in the offer as the page\'s claim, and forbid it in the guidelines. Repeating a',
-      '  superlative to an engineer costs credibility.',
-      '',
-      'Two things people get wrong and you must not:',
-      '- The ICP has to say who is a POOR fit, competitors who sell the same thing included, by',
-      '  name where you know them. Without that band every lead scores high and the floor is dead.',
-      '- The ask has to match the price. A self-serve product costing a few thousand kronor sends',
-      '  people to the page to read and buy. It never asks for a meeting, a call or fifteen',
-      '  minutes, and the guidelines must forbid those explicitly.',
-      '',
-      'Shape of the sequence: three emails is the default. Each one makes a different argument —',
-      'if you cannot give a step its own argument, do not add the step. Do not write a fifth.',
-      '',
-      'Pick the source searches from the list given. Leaving that empty produces a campaign that',
-      'silently does nothing, so only do it if no offered search could match the ICP at all.',
-    ].join('\n'),
-    messages: [
-      {
-        role: 'user',
-        content: [
-          `Emails will be signed by ${args.senderName}.`,
-          `What the user asked for:\n${args.brief}`,
-          args.links.length ? `Links to point at:\n${args.links.join('\n')}` : '',
-          args.searches.length
-            ? 'Searches available as lead sources (pick by id):\n' +
-              args.searches.map((s) => `- id ${s.id}: "${s.label}" (${s.leads} leads)`).join('\n')
-            : 'No searches exist yet — return an empty source_search_ids.',
-          `Research:\n${sources}`,
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
-      },
-    ],
-  })
-  guardRefusal(message)
-  if (!message.parsed_output) throw new Error('Claude returned no campaign draft')
-  const draft = message.parsed_output
-  return {
-    ...draft,
-    name: decodeEscapes(draft.name),
-    icp: decodeEscapes(draft.icp),
-    offer: decodeEscapes(draft.offer),
-    guidelines: decodeEscapes(draft.guidelines),
-    steps: draft.steps.map((step) => ({ ...step, goal: decodeEscapes(step.goal) })),
-    links: args.links,
+  return writeCampaign(
+    CAMPAIGN_SYSTEM,
+    [
+      `Emails will be signed by ${args.senderName}.`,
+      `What the user asked for:\n${args.brief}`,
+      args.links.length ? `Links to point at:\n${args.links.join('\n')}` : '',
+      searchList(args.searches),
+      `Research:\n${sources}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    args.links,
+  )
+}
+
+const REVISE_SYSTEM = [
+  CAMPAIGN_SYSTEM,
+  '',
+  'You are ADJUSTING a campaign that already exists. Every rule above still applies to what',
+  'you return, and these as well:',
+  '- Return the campaign complete, every field filled. Anything the instruction does not ask',
+  '  about comes back exactly as it is now, word for word. This is an edit, not a rewrite —',
+  '  the user is going to read your output as a diff against what they had.',
+  '- Apply the instruction as narrowly as it is written. "Make the tone warmer" touches the',
+  '  guidelines and perhaps the step goals; it does not touch the ICP, the offer or the links.',
+  '- Never empty a field to satisfy an instruction. If following it literally would leave the',
+  '  ICP, the offer or the sequence blank, keep what is there and apply the rest.',
+  '- If the instruction is too vague to act on, return the campaign unchanged.',
+].join('\n')
+
+/** Applies a plain-language change ("actually, drop the third email") to an existing campaign. */
+export async function reviseCampaign(args: {
+  campaign: Campaign
+  instruction: string
+  links: string[]
+  senderName: string
+  searches: { id: number; label: string; leads: number }[]
+  report?: Report
+}): Promise<CampaignDraft> {
+  const report = args.report ?? (() => {})
+  const campaign = args.campaign
+
+  // Research is the expensive half of a draft, and a revision already has last time's
+  // research baked into the offer. Only pay for it again when the instruction points
+  // somewhere genuinely new.
+  const sources = args.links.length ? await readSources(args.instruction, args.links, report) : ''
+  report({ phase: 'Revising the campaign' })
+
+  const links = [...new Set([...(campaign.links ?? []), ...args.links])]
+  const current = {
+    name: campaign.name,
+    language: campaign.language,
+    source_search_ids: campaign.source_search_ids,
+    min_score: campaign.min_score,
+    icp: campaign.icp,
+    offer: campaign.offer,
+    guidelines: campaign.guidelines,
+    steps: campaign.steps,
   }
+
+  return writeCampaign(
+    REVISE_SYSTEM,
+    [
+      `Emails will be signed by ${args.senderName}.`,
+      `The campaign as it stands today:\n${JSON.stringify(current, null, 2)}`,
+      `Links it points at:\n${links.join('\n') || '(none)'}`,
+      searchList(args.searches),
+      `The change the user asked for:\n${args.instruction}`,
+      sources ? `Research on the newly given links:\n${sources}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
+    links,
+  )
 }
 
 /* ------------------------------------------------------------- lead search */

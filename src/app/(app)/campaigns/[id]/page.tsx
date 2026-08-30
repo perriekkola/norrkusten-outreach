@@ -19,7 +19,7 @@ import { Hint } from '@/components/hint'
 import { RunButton } from './run-button'
 import { UNIT, campaignCost, usd } from '@/lib/costs'
 import { db, type Campaign } from '@/lib/db'
-import { CampaignForm } from '../campaign-form'
+import { ReviseCampaign } from './revise-campaign'
 
 type EnrollmentRow = {
   id: number
@@ -267,7 +267,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4 space-y-8">
-          <CampaignForm campaign={campaign} searches={searches} mailboxes={mailboxes} />
+          <ReviseCampaign campaign={campaign} searches={searches} mailboxes={mailboxes} />
           <Card className="border-destructive/40">
             <CardHeader>
               <CardTitle className="text-destructive text-base">Danger zone</CardTitle>
