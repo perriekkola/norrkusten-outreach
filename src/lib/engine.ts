@@ -451,6 +451,57 @@ export async function runCampaign(
   return { enrolled, scored, drafted, failed, reason, unscored: left.unscored, due: left.due }
 }
 
+export type RewritePass = {
+  rewritten: number
+  failed: number
+  reason: string
+  /** Enrollments still without a draft — hand these back to carry on where this pass stopped. */
+  pending: number[]
+}
+
+/**
+ * Throw the chosen unsent drafts away and write them again from the campaign's current
+ * wording. Concurrent and deadline-bounded like the drafting pass, so a whole selection
+ * normally finishes in one request instead of ten at a time.
+ *
+ * Each draft is deleted immediately before it is rewritten rather than all up front: a
+ * pass that runs out of time then leaves the ones it never reached intact, instead of
+ * deleting fifty drafts and recreating twelve. Anything that fails mid-write comes back
+ * in `pending`, so the caller can simply ask again.
+ */
+export async function rewriteDrafts(
+  target: { messageIds?: number[]; enrollmentIds?: number[] },
+  report: (event: { phase: string; detail?: string }) => void = () => {},
+): Promise<RewritePass> {
+  const deadline = Date.now() + PASS_BUDGET_MS
+
+  let ids = target.enrollmentIds ?? []
+  if (!ids.length && target.messageIds?.length) {
+    const rows = (await db()`
+      select distinct enrollment_id from messages
+       where id = any(${target.messageIds}::int[]) and status <> 'sent'
+       order by enrollment_id`) as { enrollment_id: number }[]
+    ids = rows.map((row) => row.enrollment_id)
+  }
+  if (!ids.length) return { rewritten: 0, failed: 0, reason: '', pending: [] }
+
+  let rewritten = 0
+  const pass = await mapLimit(ids, 4, deadline, async (id) => {
+    await db()`delete from messages where enrollment_id = ${id} and status <> 'sent'`
+    if (await draftForEnrollment(id, report)) rewritten++
+  })
+
+  // Whatever still has no draft for its current step: never started, or failed mid-write.
+  const left = (await db()`
+    select e.id from enrollments e
+     where e.id = any(${ids}::int[])
+       and not exists (select 1 from messages m
+                        where m.enrollment_id = e.id and m.step = e.step)
+     order by e.id`) as { id: number }[]
+
+  return { rewritten, failed: pass.failed, reason: pass.reason, pending: left.map((r) => r.id) }
+}
+
 /** One pass: draft what is due, send what is approved. */
 export async function runSequences() {
   const due = (await db()`

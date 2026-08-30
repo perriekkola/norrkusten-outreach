@@ -1,7 +1,8 @@
 'use client'
 
-import { ChevronRight } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronRight, ChevronsUpDown } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Fragment, useActionState, useState } from 'react'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
@@ -23,13 +24,85 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   approveMessages,
   discardMessages,
-  regenerateDrafts,
   sendNow,
   sendTestEmail,
   updateDraft,
 } from '@/lib/actions'
+import type { RewritePass } from '@/lib/engine'
+import { formatDetail, readProgress, type Progress } from '@/lib/stream'
 import { cn } from '@/lib/utils'
 import type { OutboxRow } from './page'
+
+/**
+ * Fixed time zone on purpose. This table renders on the server and hydrates in the
+ * browser, and Vercel runs in UTC — formatting in "local" time would print 14:27 on the
+ * server and 16:27 in Stockholm, which React reports as a hydration mismatch.
+ */
+const WRITTEN_AT = new Intl.DateTimeFormat('sv-SE', {
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Europe/Stockholm',
+})
+
+type SortKey = 'lead' | 'subject' | 'campaign' | 'step' | 'status' | 'written'
+type Sort = { key: SortKey; dir: 'asc' | 'desc' }
+
+const sortValue = (message: OutboxRow, key: SortKey): string | number => {
+  switch (key) {
+    case 'lead':
+      return message.lead_name || message.email
+    case 'subject':
+      return message.subject
+    case 'campaign':
+      return message.campaign_name
+    case 'step':
+      return message.step
+    case 'status':
+      return message.auto_send ? 'auto-send' : message.status
+    case 'written':
+      return Date.parse(message.created_at) || 0
+  }
+}
+
+/** Third click clears the sort — the unsorted order is the order these actually go out. */
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string
+  sortKey: SortKey
+  sort: Sort | null
+  onSort: (next: Sort | null) => void
+  className?: string
+}) {
+  const active = sort?.key === sortKey
+  const Icon = !active ? ChevronsUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="hover:text-foreground inline-flex items-center gap-1 whitespace-nowrap"
+        onClick={() =>
+          onSort(
+            !active
+              ? { key: sortKey, dir: 'asc' }
+              : sort.dir === 'asc'
+                ? { key: sortKey, dir: 'desc' }
+                : null,
+          )
+        }
+      >
+        {label}
+        <Icon className={cn('size-3', active ? 'opacity-80' : 'opacity-30')} />
+      </button>
+    </TableHead>
+  )
+}
 
 function TestSend({ message, defaultTo }: { message: OutboxRow; defaultTo: string }) {
   const [state, action, pending] = useActionState(sendTestEmail, {})
@@ -110,10 +183,73 @@ export function OutboxTable({
   /** Shown after the body so the preview matches what is actually delivered. */
   signatureFor: Record<number, string>
 }) {
+  const router = useRouter()
   const [selected, setSelected] = useState<number[]>([])
   const [expanded, setExpanded] = useState<number | null>(null)
   const [approving, setApproving] = useState(false)
-  const [rewrite, rewriteAction, rewriting] = useActionState(regenerateDrafts, {})
+  const [sort, setSort] = useState<Sort | null>(null)
+  const [progress, setProgress] = useState<Progress | null>(null)
+  const [rewriteResult, setRewriteResult] = useState<string | null>(null)
+  const rewriting = progress !== null
+
+  const rows = sort
+    ? [...messages].sort((a, b) => {
+        const left = sortValue(a, sort.key)
+        const right = sortValue(b, sort.key)
+        const order =
+          typeof left === 'number' && typeof right === 'number'
+            ? left - right
+            : String(left).localeCompare(String(right), 'sv')
+        return sort.dir === 'asc' ? order : -order
+      })
+    : messages
+
+  /**
+   * Rewrite everything selected, however many that is.
+   *
+   * One request can only fit what the function timeout allows, so the server hands back
+   * whatever it did not reach and this asks again for exactly those. A pass that rewrites
+   * nothing ends the loop — otherwise a draft that fails every single time would spin here
+   * for ever.
+   */
+  async function rewriteSelected() {
+    setRewriteResult(null)
+    setProgress({ phase: 'Starting' })
+    let rewritten = 0
+    let failed = 0
+    let reason = ''
+    let stuck = 0
+    try {
+      let body: { messageIds?: number[]; enrollmentIds?: number[] } = { messageIds: selected }
+      for (;;) {
+        const pass = await readProgress<RewritePass>('/api/outbox/rewrite', body, setProgress)
+        rewritten += pass.rewritten
+        failed += pass.failed
+        reason ||= pass.reason
+        if (!pass.pending.length) break
+        if (pass.rewritten === 0) {
+          stuck = pass.pending.length
+          break
+        }
+        body = { enrollmentIds: pass.pending }
+      }
+      setSelected([])
+      setRewriteResult(
+        [
+          `Rewrote ${rewritten}`,
+          failed ? `${failed} failed${reason ? `: ${reason}` : ''}` : null,
+          stuck && !failed ? `${stuck} could not be written` : null,
+        ]
+          .filter(Boolean)
+          .join('. '),
+      )
+      router.refresh()
+    } catch (error) {
+      setRewriteResult(error instanceof Error ? error.message : String(error))
+    } finally {
+      setProgress(null)
+    }
+  }
 
   const toggle = (id: number) =>
     setSelected((current) =>
@@ -152,25 +288,24 @@ export function OutboxTable({
           {approving ? 'Approving…' : `Approve${draftsSelected.length ? ` ${draftsSelected.length}` : ''}`}
         </Button>
 
-        <form action={rewriteAction} className="flex shrink-0 items-center gap-1.5">
-          {selected.map((id) => (
-            <input key={id} type="hidden" name="messageId" value={id} />
-          ))}
+        <div className="flex shrink-0 items-center gap-1.5">
           <Button
-            type="submit"
             size="sm"
             variant="outline"
+            onClick={rewriteSelected}
             disabled={!selected.length || rewriting}
           >
             {rewriting ? <Spinner /> : null}
-            {rewriting ? 'Rewriting…' : 'Rewrite'}
+            {rewriting ? 'Rewriting…' : `Rewrite${selected.length ? ` ${selected.length}` : ''}`}
           </Button>
           <Hint>
             Throws these drafts away and writes them again from the campaign&apos;s current
             wording. Changing a guideline or a step goal never touches drafts that already exist,
-            so this is how you apply an edit to work already queued. Ten at a time.
+            so this is how you apply an edit to work already queued. It works through the whole
+            selection, continuing by itself if that takes more than one pass — the Written
+            column shows which have been redone.
           </Hint>
-        </form>
+        </div>
 
         <ConfirmButton
           action={sendNow}
@@ -199,8 +334,23 @@ export function OutboxTable({
         </ConfirmButton>
       </div>
 
-      {rewrite.ok ? <p className="text-xs text-green-600 dark:text-green-400">{rewrite.ok}</p> : null}
-      {rewrite.error ? <p className="text-destructive text-xs">{rewrite.error}</p> : null}
+      {rewriting ? (
+        <p className="text-muted-foreground truncate text-xs">
+          {progress.phase}
+          {progress.detail ? ` · ${formatDetail(progress.detail)}` : ''}
+        </p>
+      ) : null}
+      {rewriteResult && !rewriting ? (
+        <p className="text-muted-foreground text-xs">{rewriteResult}</p>
+      ) : null}
+      {sort ? (
+        <p className="text-muted-foreground text-xs">
+          Sorted by {sort.key}.{' '}
+          <button type="button" onClick={() => setSort(null)} className="text-primary underline">
+            Back to send order
+          </button>
+        </p>
+      ) : null}
 
       <Card className="py-0">
         <CardContent className="p-0">
@@ -209,23 +359,46 @@ export function OutboxTable({
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={selected.length === messages.length && messages.length > 0}
-                    onCheckedChange={(checked) =>
-                      setSelected(checked ? messages.map((m) => m.id) : [])
-                    }
+                    checked={selected.length === rows.length && rows.length > 0}
+                    onCheckedChange={(checked) => setSelected(checked ? rows.map((m) => m.id) : [])}
                     aria-label="Select all"
                   />
                 </TableHead>
                 <TableHead className="w-8" />
-                <TableHead>Lead</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead className="w-40">Campaign</TableHead>
-                <TableHead className="w-16 text-right">Step</TableHead>
-                <TableHead className="w-24">Status</TableHead>
+                <SortHeader label="Lead" sortKey="lead" sort={sort} onSort={setSort} />
+                <SortHeader label="Subject" sortKey="subject" sort={sort} onSort={setSort} />
+                <SortHeader
+                  label="Campaign"
+                  sortKey="campaign"
+                  sort={sort}
+                  onSort={setSort}
+                  className="w-40"
+                />
+                <SortHeader
+                  label="Step"
+                  sortKey="step"
+                  sort={sort}
+                  onSort={setSort}
+                  className="w-16"
+                />
+                <SortHeader
+                  label="Written"
+                  sortKey="written"
+                  sort={sort}
+                  onSort={setSort}
+                  className="w-32"
+                />
+                <SortHeader
+                  label="Status"
+                  sortKey="status"
+                  sort={sort}
+                  onSort={setSort}
+                  className="w-24"
+                />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {messages.map((message) => (
+              {rows.map((message) => (
                 // Keyed Fragment, not <>: the key has to sit on what map returns, or React
                 // remounts both rows on every change instead of reconciling them.
                 <Fragment key={message.id}>
@@ -264,7 +437,10 @@ export function OutboxTable({
                         </div>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{message.step + 1}</TableCell>
+                    <TableCell className="tabular-nums">{message.step + 1}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs tabular-nums">
+                      {WRITTEN_AT.format(new Date(message.created_at))}
+                    </TableCell>
                     <TableCell>
                       {/* Auto-send drafts are inserted already approved, so the plain
                           "approved" badge reads as something a person did. It wasn't. */}
@@ -283,7 +459,7 @@ export function OutboxTable({
 
                   {expanded === message.id ? (
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={7} className="bg-muted/30">
+                      <TableCell colSpan={8} className="bg-muted/30">
                         <div className="max-w-3xl space-y-3 py-2">
                           <div className="text-sm">
                             <Link

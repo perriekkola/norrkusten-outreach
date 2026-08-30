@@ -15,6 +15,8 @@ export type OutboxRow = {
   status: string
   step: number
   sent_at: string | null
+  /** When this draft was written — changes every time it is rewritten. */
+  created_at: string
   opened_at: string | null
   clicked_at: string | null
   click_count: number
@@ -32,6 +34,7 @@ export type OutboxRow = {
 
 const SELECT = `
   select m.id, m.subject, m.body, m.status, m.step, m.sent_at, m.opened_at, m.replied_at,
+         m.created_at,
          m.open_count, m.clicked_at, m.click_count, m.error, l.id as lead_id, l.full_name as lead_name, l.email,
          l.company_name, c.name as campaign_name, c.id as campaign_id, c.auto_send
     from messages m
