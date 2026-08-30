@@ -77,7 +77,20 @@ assert.deepEqual(matchLocations(['sweden', 'Sweden']), ['sweden'], 'duplicates c
 
 // Every shape a scraper hands back for one person has to collapse to one row, because
 // the unique index on leads.email is the only thing stopping the duplicate.
-const { fillTemplate } = await import('../src/lib/format.ts')
+const { fillTemplate, TEMPLATE_FIELDS } = await import('../src/lib/format.ts')
+
+// Every placeholder the form offers has to be one the renderer actually fills in.
+for (const { field } of TEMPLATE_FIELDS) {
+  const filled = fillTemplate(`x{{${field}}}x`, {
+    first_name: 'Anna',
+    full_name: 'Anna Berg',
+    company_name: 'Acme Ab',
+  })
+  assert.ok(
+    !filled.includes('{{'),
+    `{{${field}}} is advertised in the campaign form but fillTemplate leaves it as text`,
+  )
+}
 
 // A fixed campaign sends exactly what was typed, with only these filled in per lead.
 const anna = { first_name: 'Anna', full_name: 'Anna Berg', company_name: 'Acme Ab' }

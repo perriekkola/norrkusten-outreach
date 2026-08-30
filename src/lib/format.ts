@@ -27,8 +27,23 @@ export function decodeEscapes(text: string): string {
  */
 export const looksMangled = (text: string) => /\p{Ll}\n\p{Ll}/u.test(text)
 
-/** What a fixed campaign may drop into its subject or body. */
-export const TEMPLATE_FIELDS = ['first_name', 'full_name', 'company'] as const
+/**
+ * Every placeholder a fixed campaign can use, what it renders to, and where it comes from.
+ *
+ * One source of truth: the campaign form lists these for the user to copy, and
+ * fillTemplate resolves exactly these keys. A selftest asserts the two agree, so adding a
+ * field here without teaching fillTemplate about it fails the build rather than shipping a
+ * token the UI advertises and the renderer leaves as literal text.
+ */
+export const TEMPLATE_FIELDS = [
+  {
+    field: 'first_name',
+    example: 'Anna',
+    note: 'First name. Falls back to the first word of the full name.',
+  },
+  { field: 'full_name', example: 'Anna Berg', note: 'Full name as it was scraped.' },
+  { field: 'company', example: 'Acme Ab', note: 'Company name.' },
+] as const
 
 /**
  * Fills the placeholders in a fixed campaign's subject or body.

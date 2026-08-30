@@ -28,6 +28,50 @@ import { Textarea } from '@/components/ui/textarea'
 import { replaceDrafts, rescoreCampaign, saveCampaign } from '@/lib/actions'
 import type { CampaignDraft } from '@/lib/ai'
 import type { Campaign, CampaignStep, WritingMode } from '@/lib/db'
+import { TEMPLATE_FIELDS } from '@/lib/format'
+
+/**
+ * The placeholder list, visible rather than buried in a tooltip.
+ *
+ * Someone writing a fixed email has to know what they can drop in without going to look it
+ * up, so every token is on screen with what it renders to, and clicking one copies it.
+ */
+function Placeholders() {
+  const [copied, setCopied] = useState<string | null>(null)
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <p className="text-xs font-medium">Placeholders — click to copy</p>
+      <div className="flex flex-wrap gap-2">
+        {TEMPLATE_FIELDS.map(({ field, example, note }) => {
+          const token = `{{${field}}}`
+          return (
+            <button
+              key={field}
+              type="button"
+              title={note}
+              onClick={() => {
+                void navigator.clipboard?.writeText(token).catch(() => {})
+                setCopied(field)
+              }}
+              className="bg-muted/60 hover:bg-muted rounded-md border px-2 py-1 text-left"
+            >
+              <code className="text-xs">{token}</code>
+              <span className="text-muted-foreground ml-2 text-xs">
+                {copied === field ? 'copied' : example}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Filled in per lead. Anything else is left exactly as typed, so a misspelt token
+        arrives visible in a test send instead of going out blank. A lead with no first name
+        leaves &ldquo;Hej,&rdquo; rather than &ldquo;Hej ,&rdquo;.
+      </p>
+    </div>
+  )
+}
 
 const DEFAULT_STEPS: CampaignStep[] = [
   {
@@ -362,6 +406,8 @@ export function CampaignForm({
         </p>
       </div>
 
+      {fixed ? <Placeholders /> : null}
+
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <Label className="flex items-center gap-1.5">
@@ -422,9 +468,7 @@ export function CampaignForm({
                   Subject
                   {index === 0 ? (
                     <Hint>
-                      Sent exactly as typed. {'{{first_name}}'}, {'{{full_name}}'} and{' '}
-                      {'{{company}}'} are filled in per lead; anything else is left alone, so a
-                      typo shows up in a test send rather than going out blank.
+                      Sent exactly as typed, with the placeholders above filled in per lead.
                     </Hint>
                   ) : null}
                 </Label>
