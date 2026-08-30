@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button'
 import type { CampaignPass } from '@/lib/engine'
 import { formatDetail, readProgress, type Progress } from '@/lib/stream'
 
-export function RunButton({ campaignId, disabled }: { campaignId: number; disabled: boolean }) {
+/** `blocked` is why a run cannot happen, shown next to the button — a disabled button
+ * with no reason is the whole bug this prop exists to fix. */
+export function RunButton({ campaignId, blocked }: { campaignId: number; blocked?: string }) {
   const router = useRouter()
   const [progress, setProgress] = useState<Progress | null>(null)
   const [result, setResult] = useState<string | null>(null)
@@ -53,7 +55,7 @@ export function RunButton({ campaignId, disabled }: { campaignId: number; disabl
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {/* Button and hint travel together — wrapping between them orphans the icon. */}
       <div className="flex shrink-0 items-center gap-1.5">
-        <Button size="sm" onClick={run} disabled={running || disabled}>
+        <Button size="sm" onClick={run} disabled={running || Boolean(blocked)}>
           {running ? <Spinner /> : null}
           {running ? 'Running…' : 'Run now'}
         </Button>
@@ -72,9 +74,9 @@ export function RunButton({ campaignId, disabled }: { campaignId: number; disabl
           {progress.detail ? ` · ${formatDetail(progress.detail)}` : ''}
         </span>
       ) : null}
-      {result ? (
+      {result ?? blocked ? (
         <span className="text-muted-foreground min-w-0 basis-full text-xs sm:basis-auto sm:max-w-[28rem]">
-          {result}
+          {result ?? blocked}
         </span>
       ) : null}
     </div>
