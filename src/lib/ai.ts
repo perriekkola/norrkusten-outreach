@@ -12,7 +12,7 @@ import {
   matchLocations,
   type Option,
 } from './apify-options'
-import type { Campaign, Lead } from './db'
+import type { Campaign, Lead, WritingMode } from './db'
 import { decodeEscapes, looksMangled } from './format'
 
 /**
@@ -355,6 +355,18 @@ const CampaignDraft = z.object({
         goal: z
           .string()
           .describe('The one argument this email makes, and what it must not do. Be explicit.'),
+        subject: z
+          .string()
+          .describe(
+            'Fixed campaigns only: the actual subject line, sent exactly as written. Empty ' +
+              'string when the campaign is written per lead.',
+          ),
+        body: z
+          .string()
+          .describe(
+            'Fixed campaigns only: the actual email, sent exactly as written, to everyone. ' +
+              'Empty string when the campaign is written per lead.',
+          ),
       }),
     )
     .min(2)
@@ -460,6 +472,36 @@ const CAMPAIGN_SYSTEM = [
   'silently does nothing, so only do it if no offered search could match the ICP at all.',
 ].join('\n')
 
+/**
+ * The extra rules for a campaign that sends one email to everybody.
+ *
+ * Appended rather than swapped in, because everything in CAMPAIGN_SYSTEM still holds — the
+ * sourcing rules especially. What changes is that there is no second model downstream to
+ * turn a goal into prose: whatever is written here is what a real person receives.
+ */
+const FIXED_SYSTEM = [
+  '',
+  'THIS CAMPAIGN SENDS ONE FIXED EMAIL TO EVERYONE. Nothing writes these emails later, so',
+  'the subject and body you return are exactly what arrives. Write every step in full,',
+  'follow-ups included — an empty step is a hole in the sequence, not a gap somebody fills',
+  'in afterwards. Keep the goal field too, in one line, so the campaign still reads as a',
+  'sequence to whoever edits it next.',
+  '',
+  'Because it is the same email for everyone, it cannot lean on anything about the reader:',
+  'no company details, no "I saw that you", no research. Lead with what changed and why it',
+  'matters to the whole group you are writing to.',
+  '',
+  'You may personalise only through these placeholders, written exactly like this:',
+  '  {{first_name}}  {{full_name}}  {{company}}',
+  'Invent no others — an unknown one is delivered as literal text. Not every lead has a',
+  'first name, so never build a sentence that breaks without one; "Hej {{first_name}}," is',
+  'safe because it degrades to "Hej,".',
+  '',
+  'Write plain text, in the campaign language, under 120 words per email. Do not sign off',
+  'and do not add a greeting at the end: the mailbox signature and the opt-out line are',
+  'appended automatically, and writing your own produces two.',
+].join('\n')
+
 const searchList = (searches: { id: number; label: string; leads: number }[]) =>
   searches.length
     ? 'Searches available as lead sources (pick by id):\n' +
@@ -471,6 +513,7 @@ async function writeCampaign(
   system: string,
   content: string,
   links: string[],
+  mode: WritingMode = 'ai',
 ): Promise<CampaignDraft> {
   const message = await anthropic().messages.parse({
     model: MODEL.campaign,
@@ -488,13 +531,28 @@ async function writeCampaign(
   if (!draft.icp.trim()) {
     throw new Error('Claude returned a campaign with no targeting rubric — try again')
   }
+
+  const steps = draft.steps.map((step) => ({
+    delay_days: step.delay_days,
+    goal: decodeEscapes(step.goal),
+    // In 'ai' mode these are asked for as empty strings; blank them anyway rather than
+    // trust that, so a stray subject can never be mistaken for a fixed campaign's wording.
+    subject: mode === 'fixed' ? decodeEscapes(step.subject) : '',
+    body: mode === 'fixed' ? decodeEscapes(step.body) : '',
+  }))
+
+  // A fixed campaign with an empty step cannot be rescued later — nothing writes these.
+  if (mode === 'fixed' && steps.some((step) => !step.subject.trim() || !step.body.trim())) {
+    throw new Error('Claude left one of the fixed emails empty — try again')
+  }
+
   return {
     ...draft,
     name: decodeEscapes(draft.name),
     icp: decodeEscapes(draft.icp),
     offer: decodeEscapes(draft.offer),
     guidelines: decodeEscapes(draft.guidelines),
-    steps: draft.steps.map((step) => ({ ...step, goal: decodeEscapes(step.goal) })),
+    steps,
     links,
   }
 }
@@ -505,14 +563,19 @@ export async function draftCampaign(args: {
   links: string[]
   senderName: string
   searches: { id: number; label: string; leads: number }[]
+  /** Whatever the form is set to right now, saved or not. */
+  writingMode?: WritingMode
   report?: Report
 }): Promise<CampaignDraft> {
   const report = args.report ?? (() => {})
+  const mode = args.writingMode ?? 'ai'
   const sources = await readSources(args.brief, args.links, report)
-  report({ phase: 'Writing the targeting, offer and sequence' })
+  report({
+    phase: mode === 'fixed' ? 'Writing the emails' : 'Writing the targeting, offer and sequence',
+  })
 
   return writeCampaign(
-    CAMPAIGN_SYSTEM,
+    mode === 'fixed' ? CAMPAIGN_SYSTEM + FIXED_SYSTEM : CAMPAIGN_SYSTEM,
     [
       `Emails will be signed by ${args.senderName}.`,
       `What the user asked for:\n${args.brief}`,
@@ -523,6 +586,7 @@ export async function draftCampaign(args: {
       .filter(Boolean)
       .join('\n\n'),
     args.links,
+    mode,
   )
 }
 
@@ -548,10 +612,13 @@ export async function reviseCampaign(args: {
   links: string[]
   senderName: string
   searches: { id: number; label: string; leads: number }[]
+  /** The form's current setting, which may not be the saved one yet. */
+  writingMode?: WritingMode
   report?: Report
 }): Promise<CampaignDraft> {
   const report = args.report ?? (() => {})
   const campaign = args.campaign
+  const mode = args.writingMode ?? campaign.writing_mode ?? 'ai'
 
   // Research is the expensive half of a draft, and a revision already has last time's
   // research baked into the offer. Only pay for it again when the instruction points
@@ -568,11 +635,16 @@ export async function reviseCampaign(args: {
     icp: campaign.icp,
     offer: campaign.offer,
     guidelines: campaign.guidelines,
-    steps: campaign.steps,
+    // Show the shape being edited: the emails themselves when they are what goes out.
+    steps: campaign.steps.map((step) =>
+      mode === 'fixed'
+        ? { delay_days: step.delay_days, subject: step.subject ?? '', body: step.body ?? '' }
+        : { delay_days: step.delay_days, goal: step.goal },
+    ),
   }
 
   return writeCampaign(
-    REVISE_SYSTEM,
+    mode === 'fixed' ? REVISE_SYSTEM + FIXED_SYSTEM : REVISE_SYSTEM,
     [
       `Emails will be signed by ${args.senderName}.`,
       `The campaign as it stands today:\n${JSON.stringify(current, null, 2)}`,
@@ -584,6 +656,7 @@ export async function reviseCampaign(args: {
       .filter(Boolean)
       .join('\n\n'),
     links,
+    mode,
   )
 }
 

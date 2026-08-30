@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import type { CampaignDraft } from '@/lib/ai'
-import type { Campaign } from '@/lib/db'
+import type { Campaign, WritingMode } from '@/lib/db'
 import { formatDetail, readProgress, type Progress } from '@/lib/stream'
 import { CampaignForm } from '../campaign-form'
 
@@ -27,6 +27,9 @@ export function ReviseCampaign({
   mailboxes: { id: number; name: string; from_email: string; is_default: boolean }[]
 }) {
   const [instruction, setInstruction] = useState('')
+  // Whatever the selector says right now, saved or not — asking for a change to a
+  // campaign you have just switched to fixed should rewrite the emails, not the goals.
+  const [writingMode, setWritingMode] = useState<WritingMode>(campaign.writing_mode ?? 'ai')
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CampaignDraft | undefined>()
@@ -41,7 +44,7 @@ export function ReviseCampaign({
       setDraft(
         await readProgress<CampaignDraft>(
           `/api/campaigns/${campaign.id}/revise`,
-          { instruction },
+          { instruction, writingMode },
           setProgress,
         ),
       )
@@ -104,6 +107,8 @@ export function ReviseCampaign({
       <CampaignForm
         key={revision}
         campaign={campaign}
+        writingMode={writingMode}
+        onWritingModeChange={setWritingMode}
         searches={searches}
         mailboxes={mailboxes}
         draft={draft}

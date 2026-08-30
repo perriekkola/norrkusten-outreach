@@ -1,13 +1,16 @@
 import { requireUser } from '@/lib/auth'
 import { draftCampaign, describeApiError, type CampaignDraft } from '@/lib/ai'
-import { db, getSetting } from '@/lib/db'
+import { db, getSetting, type WritingMode } from '@/lib/db'
 import { progressStream } from '@/lib/stream'
 
 export const maxDuration = 300
 
 export async function POST(request: Request) {
   await requireUser()
-  const { brief } = (await request.json()) as { brief?: string }
+  const { brief, writingMode } = (await request.json()) as {
+    brief?: string
+    writingMode?: WritingMode
+  }
   if (!brief?.trim()) return Response.json({ error: 'Describe what you want to sell.' }, { status: 400 })
 
   const links = [...brief.matchAll(/https?:\/\/[^\s<>"']+/g)].map((match) => match[0])
@@ -24,6 +27,7 @@ export async function POST(request: Request) {
         brief,
         links,
         senderName: (await getSetting('sender_name')) || 'Norrkusten',
+        writingMode,
         searches,
         report,
       })

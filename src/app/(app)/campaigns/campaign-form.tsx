@@ -86,11 +86,16 @@ const DEFAULT_STEPS: CampaignStep[] = [
 
 export function CampaignForm({
   campaign,
+  writingMode,
+  onWritingModeChange,
   searches,
   mailboxes,
   draft,
 }: {
   campaign?: Campaign
+  /** Owned by the page, so the AI draft and revise boxes can send it too. */
+  writingMode: WritingMode
+  onWritingModeChange: (mode: WritingMode) => void
   searches: { id: number; label: string; leads: number }[]
   mailboxes: { id: number; name: string; from_email: string; is_default: boolean }[]
   /** An AI-generated starting point. Fields stay editable — this only seeds them. */
@@ -111,7 +116,6 @@ export function CampaignForm({
   const followUp = state.followUps?.[index] ?? null
   const nextFollowUp = () => setSeen({ id: state.followUpId, index: index + 1 })
 
-  const [writingMode, setWritingMode] = useState<WritingMode>(campaign?.writing_mode ?? 'ai')
   const fixed = writingMode === 'fixed'
   const initial = draft ?? campaign
   const [steps, setSteps] = useState<CampaignStep[]>(() => {
@@ -121,8 +125,10 @@ export function CampaignForm({
     return draft && campaign
       ? base.map((step, i) => ({
           ...step,
-          subject: step.subject ?? campaign.steps[i]?.subject,
-          body: step.body ?? campaign.steps[i]?.body,
+          // '||' not '??': an ai-mode revision returns empty strings, and those must fall
+          // back to the stored wording rather than blank a fixed campaign's emails.
+          subject: step.subject || campaign.steps[i]?.subject,
+          body: step.body || campaign.steps[i]?.body,
         }))
       : base
   })
@@ -389,7 +395,10 @@ export function CampaignForm({
           </Hint>
         </Label>
         <input type="hidden" name="writing_mode" value={writingMode} />
-        <Select value={writingMode} onValueChange={(value) => setWritingMode(value as WritingMode)}>
+        <Select
+          value={writingMode}
+          onValueChange={(value) => onWritingModeChange(value as WritingMode)}
+        >
           <SelectTrigger id="writing_mode" className="w-full sm:w-96">
             <SelectValue />
           </SelectTrigger>

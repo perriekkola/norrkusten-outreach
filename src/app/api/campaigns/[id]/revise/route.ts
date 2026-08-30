@@ -1,6 +1,6 @@
 import { requireUser } from '@/lib/auth'
 import { reviseCampaign, describeApiError, type CampaignDraft } from '@/lib/ai'
-import { db, getSetting, type Campaign } from '@/lib/db'
+import { db, getSetting, type Campaign, type WritingMode } from '@/lib/db'
 import { progressStream } from '@/lib/stream'
 
 export const maxDuration = 300
@@ -8,7 +8,10 @@ export const maxDuration = 300
 export async function POST(request: Request, context: RouteContext<'/api/campaigns/[id]/revise'>) {
   await requireUser()
   const { id } = await context.params
-  const { instruction } = (await request.json()) as { instruction?: string }
+  const { instruction, writingMode } = (await request.json()) as {
+    instruction?: string
+    writingMode?: WritingMode
+  }
   if (!instruction?.trim()) {
     return Response.json({ error: 'Say what you want changed.' }, { status: 400 })
   }
@@ -33,6 +36,7 @@ export async function POST(request: Request, context: RouteContext<'/api/campaig
         instruction,
         links,
         senderName: campaign.from_name || (await getSetting('sender_name')) || 'Norrkusten',
+        writingMode,
         searches,
         report,
       })

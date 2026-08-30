@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import type { CampaignDraft } from '@/lib/ai'
+import type { WritingMode } from '@/lib/db'
 import { formatDetail, readProgress, type Progress } from '@/lib/stream'
 import { CampaignForm } from '../campaign-form'
 
@@ -18,6 +19,9 @@ export function NewCampaign({
   mailboxes: { id: number; name: string; from_email: string; is_default: boolean }[]
 }) {
   const [brief, setBrief] = useState('')
+  // Held here rather than in the form: choosing "the same email for everyone" before
+  // pressing Draft is what tells Claude to write the emails instead of the goals.
+  const [writingMode, setWritingMode] = useState<WritingMode>('ai')
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CampaignDraft | undefined>()
@@ -27,7 +31,13 @@ export function NewCampaign({
     setError(null)
     setProgress({ phase: 'Starting' })
     try {
-      setDraft(await readProgress<CampaignDraft>('/api/campaigns/draft', { brief }, setProgress))
+      setDraft(
+        await readProgress<CampaignDraft>(
+          '/api/campaigns/draft',
+          { brief, writingMode },
+          setProgress,
+        ),
+      )
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -46,7 +56,9 @@ export function NewCampaign({
           <CardDescription>
             Paste the course pages you want to sell, or just describe it. Claude reads the pages
             and fills in every field below — targeting, offer, tone and the sequence — for you to
-            edit before anything is created.
+            edit before anything is created. Set &ldquo;How the emails are written&rdquo; below
+            first: pick the fixed option and Claude writes the actual emails rather than the
+            goals behind them.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -84,6 +96,8 @@ export function NewCampaign({
       {/* Remounted when a draft arrives so the uncontrolled fields pick up the new values. */}
       <CampaignForm
         key={draft ? 'drafted' : 'blank'}
+        writingMode={writingMode}
+        onWritingModeChange={setWritingMode}
         searches={searches}
         mailboxes={mailboxes}
         draft={draft}
