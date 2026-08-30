@@ -118,7 +118,14 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
         description={`${campaign.steps.length} steps · floor ${campaign.min_score} · ${unscored} unscored · ${belowFloor} below floor${campaign.auto_send ? ' · auto-send on' : ''}`}
       >
         <div className="flex shrink-0 items-center gap-1.5">
-          <RunButton campaignId={campaign.id} disabled={!campaign.icp.trim()} />
+          <RunButton
+            campaignId={campaign.id}
+            blocked={
+              campaign.icp.trim()
+                ? undefined
+                : 'Nothing to score against — fill in “Who this campaign targets” under Settings.'
+            }
+          />
           <span className="text-muted-foreground text-xs tabular-nums">≈{usd(estimate)}</span>
           <Hint>
             Estimated Claude spend for one pass: {work.to_score} to score at ≈{usd(UNIT.qualify)},{' '}
