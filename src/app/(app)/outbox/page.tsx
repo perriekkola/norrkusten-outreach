@@ -1,7 +1,8 @@
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DraftButton } from './draft-button'
 import { db, getSetting } from '@/lib/db'
@@ -60,16 +61,25 @@ const localHours = (offset: number) =>
 
 function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto: number }) {
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-base">What happens on its own</CardTitle>
-        <CardDescription>
-          Twice a day — at <strong>{localHours(2)}</strong> (an hour earlier, {localHours(1)}, in
-          winter) — the site does a round of work by itself. Nothing else happens on a timer.
-          Every other button here does the same jobs straight away when you press it.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 text-sm">
+    <Card className="mb-6 py-0">
+      {/* A plain <details>. It is the accordion the browser already ships: keyboard and
+          screen-reader behaviour included, open state without React, and it still reads
+          fine if the page renders before any JavaScript arrives. */}
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-2 p-6 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="text-muted-foreground size-4 shrink-0 transition-transform group-open:rotate-90" />
+          <span className="text-base leading-none font-semibold">What happens on its own</span>
+          <span className="text-muted-foreground ml-auto text-xs">
+            Twice a day, {localHours(2)}
+          </span>
+        </summary>
+
+        <CardContent className="space-y-4 px-6 pb-6 text-sm">
+          <p className="text-muted-foreground">
+            Twice a day, at <strong>{localHours(2)}</strong> (an hour earlier, {localHours(1)},
+            in winter), the site does a round of work by itself. Nothing else happens on a
+            timer. Every other button here does the same jobs straight away when you press it.
+          </p>
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5">
           <li>Collects the leads from any search that has finished since last time.</li>
           <li>
@@ -79,7 +89,7 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
           </li>
           <li>
             For each running campaign: adds any new leads, gives each one a score for how well
-            they match who the campaign is for, then writes the emails that are due — best
+            they match who the campaign is for, then writes the emails that are due, best
             scores first.
           </li>
           <li>
@@ -92,11 +102,11 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
               {Math.ceil(cap / 2)} per run · {cap} per day
             </div>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-              Counted per sending address, over the last 24 hours rather than per calendar
-              day. Around 30–50 a day is where an established address stays out of trouble;
-              much above 50 and inbox providers start treating everything from your domain as
-              spam, good campaigns included. Two rounds a day means each takes half. Anything
-              over the limit simply waits for the next round — it is never thrown away.
+              Counted per sending address over the last 24 hours, not per calendar day. Around
+              30 to 50 a day is where an established address stays out of trouble. Much above
+              50 and inbox providers start treating everything from your domain as spam, good
+              campaigns included. Two rounds a day means each takes half. Anything over the
+              limit waits for the next round. It is never thrown away.
             </p>
           </div>
           <div className="rounded-lg border p-3">
@@ -105,14 +115,14 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
             </div>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
               Counted across every campaign at once. Several campaigns drawing on similar
-              searches will pick the same person more than once — and they do not see five
-              campaigns, they see you mailing them five times in a week.
+              searches will pick the same person more than once, and they do not see five
+              campaigns. They see you mailing them five times in a week.
             </p>
           </div>
           <div className="rounded-lg border p-3">
             <div className="font-medium">Approval still gates it</div>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-              Only emails you have approved are sent. Nothing approves itself — apart from
+              Only emails you have approved are sent. Nothing approves itself, apart from
               campaigns you have switched to send without approval, where the emails arrive
               ready to go.
             </p>
@@ -129,7 +139,8 @@ function Schedule({ cap, cooldown, auto }: { cap: number; cooldown: number; auto
             not what you want.
           </p>
         ) : null}
-      </CardContent>
+        </CardContent>
+      </details>
     </Card>
   )
 }
@@ -163,7 +174,7 @@ export default async function OutboxPage() {
     <>
       <PageHeader
         title="Outbox"
-        description="Emails wait here until you approve them. Approved ones go out twice a day on their own — or press Send now."
+        description="Emails wait here until you approve them. Approved ones go out twice a day on their own, or press Send now."
       >
         <DraftButton />
       </PageHeader>

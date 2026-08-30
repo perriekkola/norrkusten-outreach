@@ -74,7 +74,7 @@ export function Suppressions({ rows }: { rows: SuppressionRow[] }) {
                 action={removeSuppression}
                 payload={{ email: row.email }}
                 title={`Unblock ${row.email}?`}
-                description="They become eligible for campaigns again, and a future search can re-import them. Only do this if they asked to be contacted — an opt-out you reverse yourself is the one a regulator asks about."
+                description="They become eligible for campaigns again, and a future search can re-import them. Only do this if they asked to be contacted. An opt-out you reverse yourself is the one a regulator asks about."
                 confirmLabel="Unblock"
                 pendingLabel="Unblocking…"
               >

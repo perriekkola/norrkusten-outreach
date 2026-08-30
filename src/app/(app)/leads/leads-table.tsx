@@ -157,7 +157,7 @@ export function LeadsTable({
           disabled={!selected.length || !!busy || allMatching}
           className="ml-auto"
           title={`Block ${count(selected.length)} lead${selected.length === 1 ? '' : 's'}?`}
-          description="What to use when someone asks to be taken off the list. Their address goes on the blocked list in Settings: every campaign drops them, pending drafts are skipped, and a future search cannot re-import them. Deleting alone does not do that — the next matching search would bring them straight back."
+          description="What to use when someone asks to be taken off the list. Their address goes on the blocked list in Settings: every campaign drops them, pending drafts are skipped, and a future search cannot re-import them. Deleting alone does not do that. The next matching search would bring them straight back."
           confirmLabel="Block"
           pendingLabel="Blocking…"
         >
@@ -170,7 +170,7 @@ export function LeadsTable({
           disabled={!selected.length || !!busy || allMatching}
           className="text-destructive"
           title={`Delete ${count(selected.length)} lead${selected.length === 1 ? '' : 's'}?`}
-          description="This removes the leads and every enrollment, score and draft attached to them. Sent emails stay in the record. It cannot be undone — re-running the search would re-import them as new."
+          description="This removes the leads and every enrollment, score and draft attached to them. Sent emails stay in the record. It cannot be undone. Running the search again would bring them back as new leads."
           confirmLabel="Delete"
           pendingLabel="Deleting…"
         >

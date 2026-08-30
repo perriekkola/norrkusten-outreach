@@ -61,7 +61,7 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
     <>
       <PageHeader
         title="Leads"
-        description="The raw pool. Filter by source, then enroll into a campaign — scoring happens there."
+        description="Everything the searches have found. Filter by source, then add people to a campaign. Scoring happens there."
       />
 
       <LeadFilters

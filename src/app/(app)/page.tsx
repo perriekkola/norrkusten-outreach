@@ -67,7 +67,7 @@ export default async function DashboardPage() {
             payload={{}}
             variant="outline"
             title="Run the whole pipeline now?"
-            description="Imports finished searches, checks for replies, then enrols, scores and drafts for every active campaign — and sends everything already approved. Approved emails go to real leads immediately."
+            description="Brings in finished searches, checks for replies, runs every active campaign, then sends everything already approved. Those emails go to real leads immediately."
             confirmLabel="Run it"
             pendingLabel="Running…"
           >

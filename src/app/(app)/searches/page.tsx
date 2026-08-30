@@ -47,7 +47,7 @@ export default async function SearchesPage() {
     <>
       <PageHeader
         title="Searches"
-        description="Find leads to write to. A search keeps running in the background — the results arrive here on their own."
+        description="Find leads to write to. A search keeps running in the background and the results arrive here on their own."
       >
         <form action={refreshSearches} className="flex shrink-0 items-center gap-1.5">
           <SubmitButton variant="outline" size="sm" pendingLabel="Checking…">

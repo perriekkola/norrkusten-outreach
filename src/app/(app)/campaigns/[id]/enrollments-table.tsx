@@ -195,7 +195,7 @@ export function EnrollmentsTable({
                         action={markEnrollmentReplied}
                         payload={{ enrollmentId: row.id }}
                         title="Mark this lead as replied?"
-                        description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns are not touched — block the address if you want every campaign to stop."
+                        description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns are not touched. Block the address if you want every campaign to stop."
                         confirmLabel="Mark replied"
                         pendingLabel="Saving…"
                       >

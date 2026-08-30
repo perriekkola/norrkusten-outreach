@@ -111,7 +111,7 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
                             action={markEnrollmentReplied}
                             payload={{ enrollmentId: enrollment.id }}
                             title={`Mark replied in ${enrollment.campaign_name}?`}
-                            description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns keep running — block the address if you want every campaign to stop."
+                            description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns keep running. Block the address if you want every campaign to stop."
                             confirmLabel="Mark replied"
                             pendingLabel="Saving…"
                           >
