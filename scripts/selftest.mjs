@@ -480,5 +480,79 @@ const enrolled = await q(
 )
 assert.equal(enrolled.length, 24, 'enroll-all-matching takes every match but the suppressed one')
 
+/* ------------------------------------------------- removed enrollments */
+
+// Removing someone has to survive the next campaign pass. The automatic enrol must step
+// over the row; enrolling by hand must be able to undo it. Both go through the same
+// unique (campaign_id, lead_id), so the two upserts are what decides this.
+const [victim] = await q(`select id from leads where email = 'p9@paged.se'`)
+
+const autoEnrol = (leadId) =>
+  q(
+    `insert into enrollments (campaign_id, lead_id) values (2, $1)
+     on conflict (campaign_id, lead_id) do nothing
+     returning id`,
+    [leadId],
+  )
+const manualEnrol = (leadId) =>
+  q(
+    `insert into enrollments (campaign_id, lead_id) values (2, $1)
+     on conflict (campaign_id, lead_id) do update set status = 'active'
+       where enrollments.status = 'removed'
+     returning id`,
+    [leadId],
+  )
+const statusOf = async (leadId) =>
+  (await q(`select status from enrollments where campaign_id = 2 and lead_id = $1`, [leadId]))[0]
+    ?.status
+
+assert.equal((await autoEnrol(victim.id)).length, 1, 'first automatic enrol creates the row')
+assert.equal(await statusOf(victim.id), 'active', 'and it starts active')
+
+await q(`update enrollments set status = 'removed' where campaign_id = 2 and lead_id = $1`, [
+  victim.id,
+])
+await autoEnrol(victim.id)
+assert.equal(
+  await statusOf(victim.id),
+  'removed',
+  'a campaign pass must not re-enrol someone who was removed',
+)
+
+await manualEnrol(victim.id)
+assert.equal(
+  await statusOf(victim.id),
+  'active',
+  'enrolling by hand from the Leads page undoes a removal',
+)
+
+// A reply is not a removal: hand-enrolling must not restart a sequence someone answered.
+await q(`update enrollments set status = 'replied' where campaign_id = 2 and lead_id = $1`, [
+  victim.id,
+])
+await manualEnrol(victim.id)
+assert.equal(
+  await statusOf(victim.id),
+  'replied',
+  'a replied enrollment is never revived by re-enrolling',
+)
+
+// Re-scoring clears the whole verdict, and spares anyone already emailed.
+await q(
+  `update enrollments set score = 30, verdict = 'weak', reasons = 'r', angle = 'a'
+    where campaign_id = 1`,
+)
+const [emailed] = await q(`select enrollment_id from messages where status = 'sent' limit 1`)
+await q(
+  `update enrollments set score = null, verdict = null, reasons = null, angle = null
+    where campaign_id = 1 and status <> 'removed'
+      and id not in (select enrollment_id from messages where status = 'sent')`,
+)
+assert.equal(
+  (await q(`select 1 from enrollments where campaign_id = 1 and score is not null`)).length,
+  emailed ? 1 : 0,
+  'only enrollments with a sent email keep their score through a re-score',
+)
+
 await db.close()
 console.log('selftest: all checks passed')

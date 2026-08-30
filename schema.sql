@@ -72,7 +72,9 @@ create table if not exists enrollments (
   campaign_id  int not null references campaigns(id) on delete cascade,
   lead_id      int not null references leads(id) on delete cascade,
   step         int not null default 0,
-  status       text not null default 'active',  -- active | done | replied | stopped | bounced
+  status       text not null default 'active',  -- active | done | replied | stopped | bounced | removed
+                                                -- 'removed' is kept, not deleted: the row is what
+                                                -- stops the next pass re-enrolling them from the search
   score        int,                             -- scored against THIS campaign's ICP
   verdict      text,                            -- strong | medium | weak
   reasons      text,

@@ -3,7 +3,6 @@ import { notFound } from 'next/navigation'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { PageHeader } from '@/components/page-header'
-import { SubmitButton } from '@/components/submit-button'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -13,7 +12,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { setLeadStatus, unenroll } from '@/lib/actions'
+import { markEnrollmentReplied, unenroll } from '@/lib/actions'
 import { db, type Lead, type Message } from '@/lib/db'
 
 type Enrollment = {
@@ -65,50 +64,77 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
         title={lead.full_name || lead.email}
         description={[lead.job_title, lead.company_name].filter(Boolean).join(' · ')}
       >
-        <form action={setLeadStatus} className="flex shrink-0 items-center gap-1.5">
-          <input type="hidden" name="leadId" value={lead.id} />
-          <input type="hidden" name="status" value="replied" />
-          <SubmitButton size="sm" pendingLabel="…">
-            Mark replied
-          </SubmitButton>
-          <Hint>
-            Replies are detected automatically over IMAP. Use this when someone answers off-thread
-            — from a different address, or by phone. It stops every sequence this lead is in.
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Hint label="How replies stop a sequence">
+            Replies are detected automatically over IMAP and matched by mail headers, so they
+            stop the campaign that was actually answered and leave the others running. When
+            someone answers off-thread — a different address, or by phone — mark it by hand on
+            the campaign below. To stop every campaign at once, block the address from the
+            Leads page instead.
           </Hint>
-        </form>
+        </div>
       </PageHeader>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
-          {enrollments.some((e) => e.score !== null) ? (
+          {enrollments.length ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Fit per campaign</CardTitle>
+                <CardTitle className="text-base">Campaigns</CardTitle>
+                <CardDescription>
+                  Scored per campaign, so the same person can be strong here and weak
+                  elsewhere. Marking a reply ends that one sequence, not the others.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {enrollments
-                  .filter((enrollment) => enrollment.score !== null)
-                  .map((enrollment) => (
-                    <div key={enrollment.id} className="rounded-lg border p-4">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <Link
-                          href={`/campaigns/${enrollment.campaign_id}`}
-                          className="text-sm font-medium hover:underline"
-                        >
-                          {enrollment.campaign_name}
-                        </Link>
-                        <Badge className="capitalize">
-                          {enrollment.verdict} · {enrollment.score}
+                {enrollments.map((enrollment) => (
+                  <div key={enrollment.id} className="rounded-lg border p-4">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                      <Link
+                        href={`/campaigns/${enrollment.campaign_id}`}
+                        className="text-sm font-medium hover:underline"
+                      >
+                        {enrollment.campaign_name}
+                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="capitalize">
+                          {enrollment.status}
                         </Badge>
+                        {enrollment.score !== null ? (
+                          <Badge className="capitalize">
+                            {enrollment.verdict} · {enrollment.score}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Not scored</Badge>
+                        )}
+                        {enrollment.status === 'active' ? (
+                          <ConfirmButton
+                            action={markEnrollmentReplied}
+                            payload={{ enrollmentId: enrollment.id }}
+                            title={`Mark replied in ${enrollment.campaign_name}?`}
+                            description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns keep running — block the address if you want every campaign to stop."
+                            confirmLabel="Mark replied"
+                            pendingLabel="Saving…"
+                          >
+                            Mark replied
+                          </ConfirmButton>
+                        ) : null}
                       </div>
-                      <p className="text-muted-foreground text-sm">{enrollment.reasons}</p>
-                      <Separator className="my-3" />
-                      <p className="text-sm">
-                        <span className="text-muted-foreground">Angle: </span>
-                        {enrollment.angle}
-                      </p>
                     </div>
-                  ))}
+                    {enrollment.reasons ? (
+                      <p className="text-muted-foreground text-sm">{enrollment.reasons}</p>
+                    ) : null}
+                    {enrollment.angle ? (
+                      <>
+                        <Separator className="my-3" />
+                        <p className="text-sm">
+                          <span className="text-muted-foreground">Angle: </span>
+                          {enrollment.angle}
+                        </p>
+                      </>
+                    ) : null}
+                  </div>
+                ))}
               </CardContent>
             </Card>
           ) : null}

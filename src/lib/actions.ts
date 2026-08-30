@@ -20,7 +20,12 @@ import { LEAD_IS_SUPPRESSED, suppress, unsuppress } from './suppression'
 import { leadFilter } from './leads'
 import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
-type State = { error?: string; ok?: string }
+type State = {
+  error?: string
+  ok?: string
+  /** Set when a save changed the ICP and older scores are now against the previous rubric. */
+  rescore?: { campaignId: number; stale: number }
+}
 
 const list = (value: FormDataEntryValue | null) =>
   String(value ?? '')
@@ -279,10 +284,13 @@ export async function deleteSearch(formData: FormData) {
 /* -------------------------------------------------------------------- leads */
 
 /**
- * Scores enrolled leads against their campaign's own ICP. Scoring is per pairing:
- * the same lead can be strong for one campaign and weak for another.
+ * Drops everything the last qualification scored below the bar.
+ *
+ * Marked rather than deleted, and that is the whole point. A campaign re-enrols from its
+ * source searches on every pass and only skips people who already have a row, so deleting
+ * these put them straight back on the next run — with score = null, to be scored again at
+ * full price, dropped again, and re-added again. Keeping the row ends the loop.
  */
-/** Removes everything the last qualification scored below the bar. */
 export async function dropWeak(formData: FormData) {
   await requireUser()
   const campaignId = Number(formData.get('campaignId'))
@@ -291,7 +299,7 @@ export async function dropWeak(formData: FormData) {
   }[]
   const floor = Number(formData.get('floor')) || campaign?.min_score || 50
   await db()`
-    delete from enrollments
+    update enrollments set status = 'removed'
      where campaign_id = ${campaignId} and score is not null and score < ${floor}::int
        and status = 'active'
        and id not in (select enrollment_id from messages where status = 'sent')`
@@ -361,7 +369,8 @@ export async function enrollLeads(formData: FormData) {
       `insert into enrollments (campaign_id, lead_id)
        select $3, l.id from leads l
         where ${where} and l.status <> 'rejected' and not ${LEAD_IS_SUPPRESSED}
-       on conflict (campaign_id, lead_id) do nothing`,
+       on conflict (campaign_id, lead_id) do update set status = 'active'
+         where enrollments.status = 'removed'`,
       [...params, campaignId],
     )
     refresh()
@@ -373,7 +382,8 @@ export async function enrollLeads(formData: FormData) {
   await db()`
     insert into enrollments (campaign_id, lead_id)
     select ${campaignId}, id from leads where id = any(${leadIds}::int[])
-    on conflict (campaign_id, lead_id) do nothing`
+    on conflict (campaign_id, lead_id) do update set status = 'active'
+      where enrollments.status = 'removed'`
   refresh()
 }
 
@@ -407,6 +417,13 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
     }
   }
 
+  // Scoring runs once and never again, so a changed rubric leaves every existing score
+  // measured against the old one. Read the previous text before the update overwrites it.
+  const [before] = id
+    ? ((await db()`select icp from campaigns where id = ${id}`) as { icp: string }[])
+    : []
+  const icpChanged = Boolean(before) && before.icp.trim() !== icp
+
   const values = {
     name,
     icp,
@@ -437,6 +454,15 @@ export async function saveCampaign(_prev: State, formData: FormData): Promise<St
              steps = ${values.steps}::jsonb
        where id = ${id}`
     refresh()
+
+    if (icpChanged) {
+      const [stale] = (await db()`
+        select count(*)::int as n from enrollments
+         where campaign_id = ${id} and score is not null and status <> 'removed'`) as {
+        n: number
+      }[]
+      if (stale.n > 0) return { ok: 'Saved.', rescore: { campaignId: id, stale: stale.n } }
+    }
     return { ok: 'Saved.' }
   }
 
@@ -459,15 +485,73 @@ export async function setCampaignStatus(formData: FormData) {
   refresh()
 }
 
+/**
+ * Clears the scores for a campaign so the next pass scores them against the current ICP.
+ *
+ * Nothing is scored here — the pass does that, 40 at a time, and the campaign's cost
+ * estimate updates to show what it will run to. The verdict, reasons and angle go with the
+ * score because all four come out of the same call; leaving them would show a strong-fit
+ * badge next to no score.
+ *
+ * Anyone already emailed keeps their score. Re-scoring them could drop them under the
+ * floor halfway through a sequence and cut off a conversation that is already running.
+ */
+export async function rescoreCampaign(formData: FormData) {
+  await requireUser()
+  const campaignId = Number(formData.get('campaignId'))
+  if (!Number.isFinite(campaignId)) return
+  await db()`
+    update enrollments
+       set score = null, verdict = null, reasons = null, angle = null
+     where campaign_id = ${campaignId} and status <> 'removed'
+       and id not in (select enrollment_id from messages where status = 'sent')`
+  refresh()
+}
+
 export async function deleteCampaign(formData: FormData) {
   await requireUser()
   await db()`delete from campaigns where id = ${Number(formData.get('id'))}`
   redirect('/campaigns')
 }
 
+/**
+ * Takes one lead out of one campaign, for good.
+ *
+ * Marked, not deleted, for the reason in dropWeak: a deleted row is re-created by the very
+ * next pass over the campaign's source searches, so "Remove" used to mean "remove until
+ * tomorrow morning". The row stays, the enrol upsert skips it, and it is hidden from the
+ * enrolled list so the button still does what it looks like it does.
+ */
 export async function unenroll(formData: FormData) {
   await requireUser()
-  await db()`delete from enrollments where id = ${Number(formData.get('enrollmentId'))}`
+  await db()`
+    update enrollments set status = 'removed'
+     where id = ${Number(formData.get('enrollmentId'))}`
+  refresh()
+}
+
+/**
+ * Ends one campaign's sequence for a lead who answered — this campaign only.
+ *
+ * Per enrollment on purpose. Replies detected over IMAP are matched by the In-Reply-To
+ * header down to the exact message, so they already stop only the campaign that was
+ * answered; doing this by lead would have made the manual path the blunter of the two.
+ * To stop every campaign at once, block the address instead.
+ */
+export async function markEnrollmentReplied(formData: FormData) {
+  await requireUser()
+  const enrollmentId = Number(formData.get('enrollmentId'))
+  if (!Number.isFinite(enrollmentId)) return
+
+  await db()`
+    update enrollments set status = 'replied' where id = ${enrollmentId} and status = 'active'`
+  await db()`
+    update messages set status = 'skipped'
+     where enrollment_id = ${enrollmentId} and status in ('draft', 'approved')`
+  await db()`
+    update leads set status = 'replied'
+     where id = (select lead_id from enrollments where id = ${enrollmentId})
+       and status <> 'rejected'`
   refresh()
 }
 

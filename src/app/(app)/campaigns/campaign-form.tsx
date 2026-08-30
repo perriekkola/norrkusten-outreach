@@ -1,6 +1,16 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Hint } from '@/components/hint'
 import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
@@ -15,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { saveCampaign } from '@/lib/actions'
+import { rescoreCampaign, saveCampaign } from '@/lib/actions'
 import type { CampaignDraft } from '@/lib/ai'
 import type { Campaign, CampaignStep } from '@/lib/db'
 
@@ -43,6 +53,17 @@ export function CampaignForm({
   draft?: CampaignDraft
 }) {
   const [state, action, pending] = useActionState(saveCampaign, {})
+  /**
+   * A changed rubric does not re-score anything by itself — scoring only ever runs on rows
+   * with no score. Rather than leave that to be discovered, the save asks once, here.
+   *
+   * Derived rather than copied into state: every submit returns a fresh result object, so
+   * comparing against the one that was dismissed reopens the question on the next save
+   * without an effect syncing one piece of state into another.
+   */
+  type Rescore = { campaignId: number; stale: number }
+  const [dismissed, setDismissed] = useState<Rescore | null>(null)
+  const askRescore = state.rescore && state.rescore !== dismissed ? state.rescore : null
   const initial = draft ?? campaign
   const [steps, setSteps] = useState<CampaignStep[]>(
     initial?.steps?.length ? initial.steps : DEFAULT_STEPS,
@@ -361,6 +382,42 @@ export function CampaignForm({
           </div>
         ))}
       </div>
+
+      <AlertDialog
+        open={askRescore !== null}
+        onOpenChange={(open) => !open && setDismissed(state.rescore ?? null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-score against the new targeting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You changed who this campaign targets. {askRescore?.stale} lead
+              {askRescore?.stale === 1 ? ' is' : 's are'} still scored against the old wording,
+              and scoring never runs twice on its own — without this they keep their old
+              numbers and only new leads get the new rubric. Anyone already emailed keeps
+              their score either way. Re-scoring costs nothing now; the next passes do the
+              work and the campaign shows the estimate first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Only score new leads</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = askRescore
+                setDismissed(state.rescore ?? null)
+                if (!target) return
+                const data = new FormData()
+                data.set('campaignId', String(target.campaignId))
+                // The page refreshes from the server either way, so the Score column is the
+                // feedback; catch only so a failure is not an unhandled rejection.
+                void rescoreCampaign(data).catch(console.error)
+              }}
+            >
+              Re-score all {askRescore?.stale}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {state.error ? <p className="text-destructive text-sm">{state.error}</p> : null}
       {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}

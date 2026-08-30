@@ -13,7 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deleteCampaign, dropWeak, setCampaignStatus, unenroll } from '@/lib/actions'
+import {
+  deleteCampaign,
+  dropWeak,
+  markEnrollmentReplied,
+  setCampaignStatus,
+  unenroll,
+} from '@/lib/actions'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
 import { RunButton } from './run-button'
@@ -71,6 +77,8 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
     is_default: boolean
   }[]
 
+  // 'removed' rows are hidden, not gone. They exist only to stop the campaign re-enrolling
+  // someone who was deliberately taken out, so showing them would be showing plumbing.
   const enrollments = (await db()`
     select e.id, e.step, e.status, e.next_send_at, e.score, e.verdict, e.reasons,
            l.id as lead_id, l.full_name, l.email, l.company_name,
@@ -79,7 +87,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
            (select count(*) from messages m
              where m.enrollment_id = e.id and m.opened_at is not null)::int as opened
       from enrollments e join leads l on l.id = e.lead_id
-     where e.campaign_id = ${campaign.id}
+     where e.campaign_id = ${campaign.id} and e.status <> 'removed'
      order by e.score desc nulls last, e.next_send_at limit 500`) as EnrollmentRow[]
 
   const unscored = enrollments.filter((row) => row.score === null).length
@@ -93,7 +101,8 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
   const [work] = (await db()`
     select
       (select count(*) from enrollments
-        where campaign_id = ${campaign.id} and score is null)::int as to_score,
+        where campaign_id = ${campaign.id} and score is null
+          and status <> 'removed')::int as to_score,
       (select count(*) from enrollments e join leads l on l.id = e.lead_id
         where e.campaign_id = ${campaign.id} and e.status = 'active'
           and e.next_send_at <= now() and e.score >= ${campaign.min_score}::int
@@ -142,7 +151,7 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
             payload={{ campaignId: campaign.id }}
             disabled={belowFloor === 0}
             title={`Remove ${belowFloor} low-scoring lead${belowFloor === 1 ? '' : 's'}?`}
-            description={`Enrollments scoring under ${campaign.min_score} are removed from this campaign. The leads themselves stay in the pool, and anyone already emailed is kept.`}
+            description={`Enrollments scoring under ${campaign.min_score} drop out of this campaign and the campaign will not pull them back in from its source searches. The leads themselves stay in the pool, and anyone already emailed is kept.`}
             confirmLabel="Remove"
             pendingLabel="Removing…"
           >
@@ -245,12 +254,24 @@ export default async function CampaignPage({ params }: PageProps<'/campaigns/[id
                             ? new Date(row.next_send_at).toLocaleDateString('sv-SE')
                             : '—'}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right whitespace-nowrap">
+                          {row.status === 'active' ? (
+                            <ConfirmButton
+                              action={markEnrollmentReplied}
+                              payload={{ enrollmentId: row.id }}
+                              title="Mark this lead as replied?"
+                              description="Ends this campaign's sequence for them and skips any draft still waiting. Other campaigns are not touched — block the address if you want every campaign to stop."
+                              confirmLabel="Mark replied"
+                              pendingLabel="Saving…"
+                            >
+                              Mark replied
+                            </ConfirmButton>
+                          ) : null}
                           <ConfirmButton
                             action={unenroll}
                             payload={{ enrollmentId: row.id }}
                             title="Remove this lead from the campaign?"
-                            description="The score, the angle and any unsent draft are deleted. The lead stays in the pool and can be enrolled again, but it would be scored from scratch."
+                            description="They drop out of this campaign for good, keeping their score and any unsent draft is skipped. The campaign will not pull them back in from its source searches. Enrolling them by hand from the Leads page undoes it."
                             confirmLabel="Remove"
                             pendingLabel="Removing…"
                           >
