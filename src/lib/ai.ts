@@ -244,6 +244,18 @@ export async function draftEmail(args: {
       '  no "jag såg att...", no company boilerplate, no phone-number sign-off.',
       '- Exactly one ask, and it is whatever the goal for this email says. Do not substitute a',
       '  meeting request for it.',
+      // A course bought on a page for a few thousand kronor has no meeting to book, and asking
+      // for one reads as a sales call. This outranks the step goal deliberately: the goal text
+      // is stored per campaign and the old default told it to ask for fifteen minutes.
+      ...(campaign.links?.length
+        ? [
+            '- The close is the link, every time. This campaign sells something the reader buys',
+            '  on the page, so the ask is to read the course page and buy — nothing else. Never',
+            '  propose a meeting, a call, a demo, or "15 minuter", not as the ask, not as a',
+            '  softener, not as an alternative, and not as a question at the end. If the goal',
+            '  below asks for a call, ignore that part of it and point at the page instead.',
+          ]
+        : []),
       '- Do not write a sign-off, a closing greeting or your name. A signature is appended',
       '  automatically after your text. End on the last sentence of the message itself.',
       guidelines.trim() ? `\nCampaign-specific rules, these override the defaults:\n${guidelines.trim()}` : '',

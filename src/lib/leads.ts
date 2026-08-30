@@ -1,5 +1,3 @@
-import 'server-only'
-
 /**
  * The Leads page filter, as SQL.
  *
@@ -9,6 +7,8 @@ import 'server-only'
  * promise quietly breaks the next time a filter is added.
  *
  * Placeholders start at $1; the caller appends its own params after `params`.
+ *
+ * Pure — a SQL string and its params, no client, no secrets — so the selftest can import it.
  */
 export type LeadFilter = { query: string; source: number | null }
 

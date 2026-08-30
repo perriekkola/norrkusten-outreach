@@ -403,5 +403,68 @@ assert.equal(
   'a lead we never emailed is not held back',
 )
 
+/* ------------------------------------------------- leads filter + paging */
+
+// The Leads list and "enroll everything matching" run the same where clause from
+// leadFilter(). If they ever disagree, the page promises a count it does not enrol.
+const { leadFilter, LEADS_PER_PAGE } = await import('../src/lib/leads.ts')
+
+await db.exec(`
+  insert into searches (id, label, input, status) values
+    (7, 'Paged search', '{}'::jsonb, 'ready'),
+    (8, 'Other search', '{}'::jsonb, 'ready');
+  select setval(pg_get_serial_sequence('leads','id'), 100);
+  select setval(pg_get_serial_sequence('enrollments','id'), 100);
+  insert into leads (search_id, email, full_name, company_name, job_title)
+  select 7, 'p' || g || '@paged.se', 'Person ' || g, 'Acme ' || g, 'Konstruktionschef'
+    from generate_series(1, 25) g;
+  insert into leads (search_id, email, full_name, company_name, job_title)
+  values (8, 'other@elsewhere.se', 'Other One', 'Elsewhere', 'VD');
+`)
+
+const { where, params } = leadFilter({ query: '', source: 7 })
+const [{ total }] = await q(`select count(*)::int as total from leads l where ${where}`, params)
+assert.equal(total, 25, 'filter counts only the leads of the chosen search')
+
+// Page through with the page query and check the union is every row, exactly once.
+const seen = new Set()
+for (let page = 0; page * 10 < total; page++) {
+  const rows = await q(
+    `select l.id from leads l where ${where} order by l.created_at desc limit $3 offset $4`,
+    [...params, 10, page * 10],
+  )
+  for (const row of rows) seen.add(row.id)
+}
+assert.equal(seen.size, total, 'paging covers every matching lead with no gaps or repeats')
+assert.ok(LEADS_PER_PAGE > 0, 'page size is set')
+
+// Text search has to reach every column the page offers, and stay inside the filter.
+const named = leadFilter({ query: 'Person 1', source: 7 })
+assert.ok(
+  (await q(`select 1 from leads l where ${named.where}`, named.params)).length > 0,
+  'query matches on full_name',
+)
+const crossed = leadFilter({ query: 'Elsewhere', source: 7 })
+assert.equal(
+  (await q(`select 1 from leads l where ${crossed.where}`, crossed.params)).length,
+  0,
+  'a company match in another search is still excluded by the source filter',
+)
+
+// What "enroll all matching" actually inserts — suppressed addresses must not come along.
+await db.exec(`insert into suppressions (email, reason, source) values ('p3@paged.se', 'asked', 'manual')`)
+const enrolled = await q(
+  `insert into enrollments (campaign_id, lead_id)
+   select $3, l.id from leads l
+    where ${where} and l.status <> 'rejected'
+      and not exists (select 1 from suppressions s
+                       where s.email = l.email
+                          or (left(s.email, 1) = '@' and right(l.email, length(s.email)) = s.email))
+   on conflict (campaign_id, lead_id) do nothing
+   returning id`,
+  [...params, 1],
+)
+assert.equal(enrolled.length, 24, 'enroll-all-matching takes every match but the suppressed one')
+
 await db.close()
 console.log('selftest: all checks passed')

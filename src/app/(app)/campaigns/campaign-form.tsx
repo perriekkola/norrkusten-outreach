@@ -20,7 +20,12 @@ import type { CampaignDraft } from '@/lib/ai'
 import type { Campaign, CampaignStep } from '@/lib/db'
 
 const DEFAULT_STEPS: CampaignStep[] = [
-  { delay_days: 0, goal: 'Intro: why we are reaching out, one concrete hook, ask for a 15-min call.' },
+  {
+    delay_days: 0,
+    goal:
+      'Intro: why we are reaching out, one concrete hook, then send them to the course page ' +
+      'to read the details and buy. Do not ask for a meeting or a call.',
+  },
   { delay_days: 4, goal: 'Follow-up: add one new angle or proof point. Keep it to three sentences.' },
   { delay_days: 7, goal: 'Break-up: short, no pressure, leave the door open.' },
 ]
