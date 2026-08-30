@@ -247,9 +247,13 @@ export function CampaignForm({
         <Label htmlFor="offer" className="flex items-center gap-1.5">
           What you are selling
           <Hint>
-            Used when writing each email, not when scoring. Claude treats this as fact, so
-            anything inaccurate here becomes a claim in a real email. Include the concrete
-            detail worth citing — a deadline, what changes, the specific outcome.
+            {fixed
+              ? 'Not sent anywhere on its own — with a fixed campaign this is what Claude ' +
+                'reads when you ask it to write or change the emails above. Claude treats it ' +
+                'as fact, so anything inaccurate here can end up in one of them.'
+              : 'Used when writing each email, not when scoring. Claude treats this as fact, ' +
+                'so anything inaccurate here becomes a claim in a real email. Include the ' +
+                'concrete detail worth citing — a deadline, what changes, the specific outcome.'}
           </Hint>
         </Label>
         <Textarea
@@ -266,10 +270,15 @@ export function CampaignForm({
           <Label className="flex items-center gap-1.5">
             Links to include
             <Hint>
-              The pages these emails drive to. Add several when the campaign pitches more than
-              one course — Claude picks the most relevant one per email and never invents a URL
-              outside this list. Links in sent mail are rewritten through a tracker so clicks
-              show up in Analytics.
+              {fixed
+                ? 'With a fixed campaign the URL goes in the body itself. These are what ' +
+                  'Claude points at when it writes or changes those emails for you. Any link ' +
+                  'in a sent email is rewritten through a tracker, wherever it came from, so ' +
+                  'clicks show up in Analytics either way.'
+                : 'The pages these emails drive to. Add several when the campaign pitches ' +
+                  'more than one course — Claude picks the most relevant one per email and ' +
+                  'never invents a URL outside this list. Links in sent mail are rewritten ' +
+                  'through a tracker so clicks show up in Analytics.'}
             </Hint>
           </Label>
           <Button
@@ -308,9 +317,14 @@ export function CampaignForm({
         <Label htmlFor="guidelines" className="flex items-center gap-1.5">
           How the emails should read
           <Hint>
-            Campaign-specific rules that override the defaults — what to ask for, tone, phrases
-            to avoid. This is the dial to turn when the drafts come out wrong. Example: &ldquo;Ask
-            them to read the course page and reply with questions. Never propose a meeting.&rdquo;
+            {fixed
+              ? 'Read only when Claude writes or revises the fixed emails above — nothing ' +
+                'applies it at send time, because the wording is already settled. Say the ' +
+                'tone and what to avoid, and asking for a change will respect it.'
+              : 'Campaign-specific rules that override the defaults — what to ask for, tone, ' +
+                'phrases to avoid. This is the dial to turn when the drafts come out wrong. ' +
+                'Example: "Ask them to read the course page and reply with questions. Never ' +
+                'propose a meeting."'}
           </Hint>
         </Label>
         <Textarea
@@ -377,10 +391,23 @@ export function CampaignForm({
             </SelectContent>
           </Select>
         </div>
-        <label className="flex items-end gap-2 pb-2 text-sm">
-          <Checkbox name="auto_send" defaultChecked={campaign?.auto_send} />
-          Send without approval, best scores first
-        </label>
+        <div className="flex items-end gap-1.5 pb-2">
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox name="auto_send" defaultChecked={campaign?.auto_send} />
+            Send without approval, best scores first
+          </label>
+          <Hint>
+            {fixed
+              ? 'Worth considering for a fixed campaign. Approving each email one by one is ' +
+                'reading your own words back three hundred times — you wrote them. What ' +
+                'approval still gates is who receives them, and that part is a judgement ' +
+                'call the scoring made, not you. Leave this off while you are still checking ' +
+                'the scores; turn it on once the outbox stops surprising you.'
+              : 'Off by default, deliberately. Every email is written per lead by a model, ' +
+                'so the outbox is where you read one before a real person does. Turning this ' +
+                'on sends them at the next cron run with nobody looking.'}
+          </Hint>
+        </div>
       </div>
 
       <div className="space-y-2">
