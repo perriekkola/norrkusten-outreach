@@ -13,7 +13,7 @@ import {
   type Option,
 } from './apify-options'
 import type { Campaign, Lead } from './db'
-import { decodeEscapes } from './format'
+import { decodeEscapes, looksMangled } from './format'
 
 /**
  * One model per task, overridable without a deploy. Research dominates the bill —
@@ -287,6 +287,28 @@ export async function draftEmail(args: {
     subject: decodeEscapes(message.parsed_output.subject),
     body: decodeEscapes(message.parsed_output.body),
   }
+}
+
+/**
+ * Write one email, rejecting a draft whose Swedish letters came back as line breaks.
+ *
+ * The retry is the whole point: the corruption is a sampling accident, not a bad prompt,
+ * so asking again almost always produces a clean draft. Failing loudly on the second try
+ * beats storing it — a mangled body in the outbox is one approval click from a real
+ * person, and an auto-send campaign does not even pause for that.
+ */
+export async function draftEmailChecked(args: Parameters<typeof draftEmail>[0]): Promise<Draft> {
+  let last: Draft | null = null
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const draft = await draftEmail(args)
+    if (!looksMangled(draft.body) && !looksMangled(draft.subject)) return draft
+    last = draft
+    console.error('draft came back mangled, retrying', { attempt, subject: draft.subject })
+  }
+  throw new Error(
+    `Claude returned a draft with broken Swedish characters twice in a row (${last?.subject ?? ''}). ` +
+      'Nothing was saved — try again.',
+  )
 }
 
 /* ----------------------------------------------------------------- campaign */

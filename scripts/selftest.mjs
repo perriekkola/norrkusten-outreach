@@ -24,6 +24,20 @@ assert.equal((html.match(/<p /g) ?? []).length, 2, 'blank line splits paragraphs
 assert.ok(!textToHtml('x').includes('<img'), 'no pixel without a URL')
 assert.ok(textToHtml('x', 'https://e.test/t/1-a').includes('<img'), 'pixel when URL given')
 
+const { looksMangled } = await import('../src/lib/format.ts')
+
+// The real corrupted draft: every a-ring/a-uml/o-uml replaced by a line break.
+assert.ok(
+  looksMangled('typ av ombyggnation som sker l\ntt i egen produktion'),
+  'a newline inside a word is a mangled draft',
+)
+assert.ok(looksMangled('Vi har tagit fram en webbkurs om CE-m\nrkning enligt'), 'mid-word break')
+// Everything a correct email actually contains must pass.
+assert.ok(!looksMangled('Hej Thomas,\n\nI januari 2027 ers\u00e4tts Maskindirektivet.'), 'paragraph break is fine')
+assert.ok(!looksMangled('en fr\u00e5ga.\nMed v\u00e4nliga h\u00e4lsningar'), 'break after punctuation is fine')
+assert.ok(!looksMangled('CE-m\u00e4rkning och underh\u00e5ll g\u00e4ller f\u00f6r 2027'), 'clean Swedish text is fine')
+assert.ok(!looksMangled('rad ett\nRad tv\u00e5'), 'break before a capital is fine')
+
 const { withSignature, decodeEscapes } = await import('../src/lib/format.ts')
 assert.equal(
   decodeEscapes('Fr\\u00e5n 2027 till\\u00e4mpas'),

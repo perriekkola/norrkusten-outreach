@@ -1,6 +1,6 @@
 import 'server-only'
 import { getDatasetItems, getRun } from './apify'
-import { describeApiError, draftEmail, qualifyLead, researchCompany } from './ai'
+import { describeApiError, draftEmailChecked, qualifyLead, researchCompany } from './ai'
 import { db, getSetting, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
 import { normalizeEmail } from './format'
@@ -138,7 +138,7 @@ export async function draftForEnrollment(
 
   const senderName = campaign.from_name || 'Norrkusten'
   report({ phase: 'Writing to', detail: lead.full_name || lead.email })
-  const draft = await draftEmail({
+  const draft = await draftEmailChecked({
     lead,
     campaign,
     step: row.step,

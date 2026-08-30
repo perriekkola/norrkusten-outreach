@@ -11,6 +11,22 @@ export function decodeEscapes(text: string): string {
   )
 }
 
+/**
+ * Spots a draft where the model dropped Swedish letters and left newlines behind.
+ *
+ * Structured output makes the model write non-ASCII as a \uXXXX escape, and under
+ * constrained decoding it sometimes emits a different valid escape instead — we have seen
+ * "CE-märkning" come back as "CE-m\nrkning", every å/ä/ö replaced by a line break, halfway
+ * through an otherwise perfect email. It is not something a reader forgives, and an
+ * auto-send campaign posts it without anyone looking.
+ *
+ * A newline wedged between two lowercase letters is the tell: real paragraph breaks are
+ * blank lines and real line breaks follow punctuation, so no correct draft contains one.
+ * Checked against every draft this app has written — it flags the corrupt one and none
+ * of the clean ones.
+ */
+export const looksMangled = (text: string) => /\p{Ll}\n\p{Ll}/u.test(text)
+
 /** The signature is configuration, not something to regenerate per email. */
 export function withSignature(body: string, signature: string) {
   const trimmed = signature.trim()
