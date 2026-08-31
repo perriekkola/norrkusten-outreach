@@ -46,15 +46,17 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
             ))}
           </nav>
 
-          <nav className="ml-auto hidden shrink-0 items-center gap-1 lg:flex">
-            {ASIDE.map((item) => (
-              <NavLink key={item.href} href={item.href}>
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="ml-auto shrink-0 lg:ml-2">
+          {/* One group, so the only space between Settings and the avatar is this gap.
+              Separate children would each pick up the header's lg:gap-6 as well, which put
+              32px there against the 4px between the nav links themselves. */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <nav className="hidden items-center gap-1 lg:flex">
+              {ASIDE.map((item) => (
+                <NavLink key={item.href} href={item.href}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
             <UserMenu email={user.email} />
           </div>
         </div>
