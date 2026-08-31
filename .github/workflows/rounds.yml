@@ -51,8 +51,32 @@ jobs:
             echo "SITE_URL and CRON_SECRET repository secrets are not set." >&2
             exit 1
           fi
+
+          # Trim surrounding whitespace. Pasting a secret very easily carries a trailing
+          # newline, and the header then reads "Bearer abc123\n" and is rejected as
+          # confidently as a wrong value, with nothing on screen to tell the two apart.
+          secret=$(printf '%s' "${CRON_SECRET}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          site=$(printf '%s' "${SITE_URL}" | sed -e 's/^[[:space:]]*//' -e 's#[[:space:]/]*$##')
+
           # --fail-with-body so a 401 or 500 fails the run loudly and shows the reason,
           # rather than passing silently and leaving email unsent for days.
-          curl --fail-with-body --silent --show-error --max-time 310 \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            "${SITE_URL}/api/cron"
+          code=$(curl --silent --show-error --max-time 310 \
+            -o response.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${secret}" \
+            "${site}/api/cron") || true
+          cat response.txt
+
+          if [ "$code" = "401" ]; then
+            echo "" >&2
+            echo "The site rejected the token. The CRON_SECRET repository secret does not" >&2
+            echo "match CRON_SECRET in the site's Production environment." >&2
+            echo "Note that 'vercel env pull' writes the Development value, which is often" >&2
+            echo "a different one. Copy the Production value, or set the same new value in" >&2
+            echo "both places and redeploy so the site picks it up." >&2
+            exit 1
+          fi
+          if [ "$code" != "200" ]; then
+            echo "" >&2
+            echo "Round failed with HTTP $code." >&2
+            exit 1
+          fi
