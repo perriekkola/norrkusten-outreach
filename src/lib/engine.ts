@@ -664,9 +664,9 @@ export async function tick() {
 
   // Replies before anything else: a lead who answered must not get the email already
   // sitting approved for them, and must not have another one drafted either.
-  const replies = await checkReplies().catch((error) => {
+  const { replied, auto, bounced } = await checkReplies().catch((error) => {
     console.error('reply check failed', error)
-    return 0
+    return { replied: 0, auto: 0, bounced: 0 }
   })
 
   // Sending goes before drafting, and the order is the entire point. Drafting is model
@@ -700,5 +700,5 @@ export async function tick() {
   // its error text until it sends, so counting errors alone cannot tell those apart.
   await setSetting('last_round_throttled', throttled ? 'yes' : 'no')
 
-  return { replies, drafted, sent, held, throttled }
+  return { replies: replied, autoReplies: auto, bounced, drafted, sent, held, throttled }
 }

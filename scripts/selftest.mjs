@@ -99,6 +99,40 @@ assert.deepEqual(matchLocations(['sweden', 'Sweden']), ['sweden'], 'duplicates c
 
 // Every shape a scraper hands back for one person has to collapse to one row, because
 // the unique index on leads.email is the only thing stopping the duplicate.
+const { isAutoReply, isBounce, referencedIds } = await import('../src/lib/format.ts')
+
+// Every one of these arrives with the original References attached, so without telling
+// them apart they all count as a reply: the sequence stops and the reply rate reads high.
+const REF = 'References: <a@x.se> <b@x.se>\n'
+
+assert.ok(isAutoReply('Auto-Submitted: auto-replied\n'), 'RFC 3834 auto-replied')
+assert.ok(isAutoReply('Auto-Submitted: auto-generated\n'), 'auto-generated too')
+assert.ok(isAutoReply('Precedence: bulk\n'), 'bulk precedence')
+assert.ok(isAutoReply('X-Autoreply: yes\n'), 'x-autoreply')
+assert.ok(isAutoReply(REF, 'Automatiskt svar: Nya maskinförordningen'), 'Swedish out-of-office')
+assert.ok(isAutoReply(REF, 'Out of Office'), 'English out-of-office')
+// "no" is the one value meaning a person sent it.
+assert.ok(!isAutoReply('Auto-Submitted: no\n' + REF, 'Re: Nya maskinförordningen'), 'a real reply')
+// Getting this wrong here means emailing someone who did answer, which is the worse
+// direction, so a bare mention of a holiday must not qualify.
+assert.ok(!isAutoReply(REF, 'Re: kursen — efter semestern kanske?'), 'holiday talk is not an OOO')
+
+assert.ok(isBounce('Content-Type: multipart/report; report-type=delivery-status\n'), 'DSN')
+assert.ok(isBounce('X-Failed-Recipients: a@x.se\n'), 'failed recipients header')
+assert.ok(isBounce('Return-Path: <>\n'), 'null return path')
+assert.ok(isBounce(REF, 'Re: hej', 'MAILER-DAEMON@x.se'), 'daemon sender')
+assert.ok(isBounce(REF, 'Undeliverable: Nya maskinförordningen'), 'Outlook wording')
+assert.ok(!isBounce(REF, 'Re: Nya maskinförordningen', 'anna@acme.se'), 'a real reply')
+
+// Only References supplies ids. The fetch asks for several headers now, and scanning all
+// of them for <...> would pick up ids from headers that mean something else entirely.
+assert.deepEqual(
+  referencedIds('Return-Path: <bounce@x.se>\nReferences: <a@x.se> <b@x.se>\nPrecedence: bulk\n'),
+  ['<a@x.se>', '<b@x.se>'],
+  'ids come from References and nowhere else',
+)
+assert.deepEqual(referencedIds('Return-Path: <bounce@x.se>\n'), [], 'no References, no ids')
+
 const { fillTemplate, TEMPLATE_FIELDS } = await import('../src/lib/format.ts')
 
 // Every placeholder the form offers has to be one the renderer actually fills in.

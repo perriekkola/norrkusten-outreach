@@ -76,6 +76,79 @@ export function fillTemplate(
   })
 }
 
+/**
+ * Is this an out-of-office rather than a person answering?
+ *
+ * An auto-reply carries In-Reply-To like any other reply, so without this it counts as a
+ * reply: the sequence stops for good and the reply rate reads high. Someone on holiday
+ * would be dropped from the campaign and never written to again, which is the expensive
+ * half. The inflated number is only the visible half.
+ *
+ * Headers decide it wherever they can. RFC 3834 requires an automatic reply to say so in
+ * Auto-Submitted, and the older X-Autoreply and Precedence conventions are still common.
+ * The subject list is deliberately short and literal: getting this wrong in the other
+ * direction means carrying on emailing somebody who did reply, which is worse than
+ * missing an out-of-office, so a bare "Semester" is not enough to qualify.
+ */
+const AUTO_SUBJECT =
+  /\b(out of office|automatic(?:al)? reply|auto[- ]?reply|automatiskt svar|autosvar|frånvarande|franvarande|ej på kontoret|abwesenheitsnotiz|fuori sede)\b/i
+
+export function isAutoReply(rawHeaders: string, subject = ''): boolean {
+  const headers = rawHeaders.toLowerCase()
+
+  // "no" is the one value that means a human sent it.
+  const submitted = headers.match(/^auto-submitted:[ \t]*([^\s;]+)/m)?.[1]
+  if (submitted && submitted !== 'no') return true
+
+  if (/^precedence:[ \t]*(bulk|auto[-_]reply|junk)/m.test(headers)) return true
+  if (/^x-(?:autoreply|autorespond|auto-response-suppress|autoreply-from)[ \t]*:/m.test(headers)) {
+    return true
+  }
+
+  return AUTO_SUBJECT.test(subject)
+}
+
+/**
+ * Is this the mail system reporting a failure rather than a person writing back?
+ *
+ * A bounce quotes the original message, so it arrives with the same References and counts
+ * as a reply without this. That is the worst of the three cases: the address is dead, the
+ * sequence stops as though the lead engaged, and the reply rate goes up because nobody
+ * received the email. Bounce rate is also the single strongest signal a spam filter uses,
+ * so a dead address that keeps being written to costs the whole domain.
+ *
+ * Detected from the delivery report itself (RFC 3464), the null return path every bounce
+ * carries, the daemon that sent it, and the handful of subjects the big providers use.
+ */
+const BOUNCE_SUBJECT =
+  /\b(undeliverable|undelivered mail|delivery status notification|mail delivery (?:failed|subsystem)|returned mail|delivery has failed|failure notice|kunde inte levereras|olevererat|leverans misslyckades)\b/i
+
+export function isBounce(rawHeaders: string, subject = '', from = ''): boolean {
+  const headers = rawHeaders.toLowerCase()
+
+  if (/^content-type:[^\n]*multipart\/report/m.test(headers)) return true
+  if (/^x-failed-recipients:/m.test(headers)) return true
+  // RFC 3464 requires a bounce to carry an empty envelope sender, so nothing can bounce
+  // off the bounce and start a loop.
+  if (/^return-path:[ \t]*<>\s*$/m.test(headers)) return true
+  if (/\b(mailer-daemon|postmaster)\b/i.test(from)) return true
+
+  return BOUNCE_SUBJECT.test(subject)
+}
+
+/**
+ * The message ids a reply is answering, taken only from References.
+ *
+ * Scoped to that one header on purpose: the fetch asks for several now, and a bare scan
+ * for <...> across all of them would pick up ids out of headers that mean something else.
+ */
+export function referencedIds(rawHeaders: string): string[] {
+  // Header folding puts continuation lines under an indent, so take everything up to the
+  // next line that starts in column one.
+  const line = rawHeaders.match(/^references:([\s\S]*?)(?=^\S|\s*$)/im)?.[1] ?? ''
+  return line.match(/<[^>\s]+>/g) ?? []
+}
+
 /** The signature is configuration, not something to regenerate per email. */
 export function withSignature(body: string, signature: string) {
   const trimmed = signature.trim()
