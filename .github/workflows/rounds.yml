@@ -1,34 +1,28 @@
 name: Outreach rounds
 
-# Spreads the day's sending instead of firing it in two bursts.
+# Runs one round, on demand.
 #
-# vercel.json can do this too, but only on a paid plan: Hobby runs each cron once a day,
-# which is why there are two entries there doing one round each. GitHub Actions has no such
-# limit and the repo is already here, so this costs nothing.
+# There is no schedule here any more. GitHub never fired one: the workflow sat registered
+# and active for hours while every slot went past, which is the known shape of scheduled
+# Actions being best-effort on a shared queue. Email going out on time is a poor fit for
+# best-effort, so the schedule moved to cron-job.org, with the two entries in vercel.json
+# still covering 09:00 and 15:00 as a floor.
 #
-# The endpoint is a plain authenticated GET. Nothing about it is specific to any host, so
-# a crontab on your own machine works exactly as well:
+# Kept for manual runs, which is what it was most useful for anyway.
+#
+# The endpoint is a plain authenticated GET and answers straight away, doing the work
+# afterwards, so anything able to make an HTTP request on a timer can drive it:
 #   curl -H "Authorization: Bearer $CRON_SECRET" https://your-site/api/cron
 #
-# Before enabling, set two repository secrets under Settings -> Secrets -> Actions:
-#   SITE_URL      https://your-site.vercel.app   (no trailing slash)
-#   CRON_SECRET   the same value the site has
-# and set "Rounds a day" in the app's Settings to match the schedule below, or the early
-# rounds will spend the whole daily allowance and the later ones will find none left.
+# Needs two repository secrets under Settings -> Secrets -> Actions:
+#   SITE_URL      https://outreach.norrkusten.se   (no trailing slash)
+#   CRON_SECRET   the same value the site has, from its Production environment
+#
+# "Rounds a day" in the app's Settings has to match however many times a day the endpoint
+# is actually called, whoever calls it, or the early rounds spend the whole daily
+# allowance and the later ones find none left.
 
 on:
-  schedule:
-    # Every 30 minutes, 07:00-16:00 UTC, Monday to Friday. That is 09:00-18:00 Swedish
-    # summer time: office hours, when a cold email is read rather than buried overnight.
-    #
-    # Five past, not on the hour. vercel.json still fires at 07:00 and 13:00 UTC as a
-    # fallback for when GitHub skips a scheduled run, and two rounds starting at the same
-    # instant would each be granted a full round's allowance and between them double the
-    # rate. The offset keeps them apart.
-    #
-    # 20 rounds here plus 2 from vercel.json, so set "Rounds a day" to 22.
-    - cron: '5,35 7-16 * * 1-5'
-  # Lets you trigger one by hand from the Actions tab without waiting.
   workflow_dispatch:
 
 # One round at a time. Two overlapping rounds would each get the full per-round
@@ -58,9 +52,9 @@ jobs:
           secret=$(printf '%s' "${CRON_SECRET}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
           site=$(printf '%s' "${SITE_URL}" | sed -e 's/^[[:space:]]*//' -e 's#[[:space:]/]*$##')
 
-          # --fail-with-body so a 401 or 500 fails the run loudly and shows the reason,
-          # rather than passing silently and leaving email unsent for days.
-          code=$(curl --silent --show-error --max-time 310 \
+          # The body carries the previous round's result, since this one has only just
+          # started. Printing it is the quickest way to see whether rounds are healthy.
+          code=$(curl --silent --show-error --max-time 60 \
             -o response.txt -w '%{http_code}' \
             -H "Authorization: Bearer ${secret}" \
             "${site}/api/cron") || true
@@ -77,6 +71,6 @@ jobs:
           fi
           if [ "$code" != "200" ]; then
             echo "" >&2
-            echo "Round failed with HTTP $code." >&2
+            echo "Round failed to start with HTTP $code." >&2
             exit 1
           fi
