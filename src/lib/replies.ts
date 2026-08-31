@@ -141,23 +141,32 @@ async function pollMailbox(
       const subject = mail.envelope?.subject ?? ''
       const sender = mail.envelope?.from?.map((a) => a.address ?? '').join(' ') ?? ''
 
-      // An out-of-office is not an answer. Leaving the sequence running is the whole
-      // point: they are away, not uninterested, and the next step is due in days anyway.
-      if (isAutoReply(raw, subject)) {
+      // Bounce first, and the order is not a detail. A delivery report is auto-submitted
+      // by definition, so it carries Auto-Submitted: auto-replied like any out-of-office
+      // does. Asking "is this automatic?" first swallows every bounce as an out-of-office
+      // and the address is never marked dead, which is exactly what happened here: twelve
+      // undeliverable reports sat recorded as replies.
+      const bounce = isBounce(raw, subject, sender)
+
+      // An out-of-office is not an answer, and unlike a bounce it is not a dead end
+      // either. Leaving the sequence running is the point: they are away, not
+      // uninterested, and the next step is days out anyway.
+      if (!bounce && isAutoReply(raw, subject)) {
         auto++
         continue
       }
-
-      // A bounce is the opposite: the address did not receive it and never will, so the
-      // sequence has to stop even though nobody engaged.
-      const bounce = isBounce(raw, subject, sender)
 
       for (const row of rows) {
         if (bounce) {
           // Not marked replied: it was never delivered, so counting it as engagement
           // would overstate the reply rate with the one thing that is the opposite of it.
+          // replied_at is cleared, not just left alone. Before bounces were told apart
+          // these were recorded as replies, and a bounce counted as engagement is the
+          // most misleading number this app can show.
           await db()`
-            update messages set status = 'failed', error = ${`Bounced: ${subject}`.slice(0, 500)}
+            update messages
+               set status = 'failed', replied_at = null, reply_intent = null,
+                   error = ${`Bounced: ${subject}`.slice(0, 500)}
              where id = ${row.id}`
           await db()`update leads set status = 'bounced' where id = ${row.lead_id}`
           await db()`

@@ -152,6 +152,15 @@ assert.ok(!isAutoReply('Auto-Submitted: no\n' + REF, 'Re: Nya maskinförordninge
 assert.ok(!isAutoReply(REF, 'Re: kursen — efter semestern kanske?'), 'holiday talk is not an OOO')
 
 assert.ok(isBounce('Content-Type: multipart/report; report-type=delivery-status\n'), 'DSN')
+// A real one from the host, and the reason bounces must be judged before auto-replies: a
+// delivery report is auto-submitted by definition, so asking "is this automatic?" first
+// swallows every bounce as an out-of-office and the dead address is never marked.
+const realBounce = 'References: <a@norrkusten.se>\nAuto-Submitted: auto-replied\n'
+assert.ok(isAutoReply(realBounce), 'a bounce does look automatic')
+assert.ok(
+  isBounce(realBounce, 'Undeliverable: Nya maskinförordningen', 'support@one.com'),
+  'and it is a bounce, which has to be checked first',
+)
 assert.ok(isBounce('X-Failed-Recipients: a@x.se\n'), 'failed recipients header')
 assert.ok(isBounce('Return-Path: <>\n'), 'null return path')
 assert.ok(isBounce(REF, 'Re: hej', 'MAILER-DAEMON@x.se'), 'daemon sender')
