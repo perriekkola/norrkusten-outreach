@@ -189,6 +189,22 @@ export const leadCooldownDays = async () =>
   Number(await getSetting('lead_cooldown_days', String(DEFAULT_LEAD_COOLDOWN_DAYS))) ||
   DEFAULT_LEAD_COOLDOWN_DAYS
 
+/**
+ * Is this the mail server saying "not now" rather than "never"?
+ *
+ * SMTP 4xx is explicitly temporary: 451 "Too many mails received within the last 5
+ * minutes" means slow down and retry, not that the address is bad. Marking those failed
+ * threw away 75 perfectly good emails in one run, because nothing ever retries a failed
+ * message. A transient error leaves the message approved so the next round picks it up.
+ */
+function isTransientSendError(error: unknown): boolean {
+  const code = (error as { responseCode?: number } | null)?.responseCode
+  if (typeof code === 'number') return code >= 400 && code < 500
+  return /too many|rate limit|try again|temporarily|timeout|ETIMEDOUT|ECONNRESET/i.test(
+    String(error),
+  )
+}
+
 export type SendOutcome = 'sent' | 'suppressed' | 'cooldown'
 
 /**
@@ -264,7 +280,12 @@ export async function sendMessage(
              mailbox_id = ${row.mailbox_id}
        where id = ${message.id}`
   } catch (error) {
-    await db()`update messages set status = 'failed', error = ${String(error)} where id = ${message.id}`
+    // Keep a throttled message approved. Recording the reason still surfaces it, but the
+    // status is what decides whether it is ever tried again.
+    const status = isTransientSendError(error) ? 'approved' : 'failed'
+    await db()`
+      update messages set status = ${status}, error = ${String(error)}
+       where id = ${message.id}`
     throw error
   }
 
@@ -530,7 +551,19 @@ export async function rewriteDrafts(
  * No model calls, so this is seconds of work rather than minutes. That matters: it used to
  * sit behind the drafting, and drafting is what runs out of time.
  */
-export async function sendApproved() {
+/**
+ * Gap between sends.
+ *
+ * The daily cap is per mailbox, but every mailbox here goes out through one provider on
+ * one domain, so five mailboxes sending twenty each still looks like a single sender
+ * firing a hundred emails a minute. That is what tripped the rate limit; the per-mailbox
+ * cap never saw it because no single mailbox went over.
+ */
+const SEND_SPACING_MS = 2_000
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+export async function sendApproved(deadline = Date.now() + 120_000) {
   // Highest-scoring leads go out first, so a partial run still hits the best ones — and
   // a pass that runs out of allowance has spent it on the best leads, not the first ones.
   const approved = (await db()`
@@ -551,12 +584,18 @@ export async function sendApproved() {
   let sent = 0
   let held = 0
 
+  let throttled = false
   for (const message of approved) {
+    if (Date.now() > deadline) {
+      held++
+      continue
+    }
     if (!left.has(message.mailbox_id)) left.set(message.mailbox_id, allowance(message.mailbox_id))
     if (left.get(message.mailbox_id)! <= 0) {
       held++
       continue
     }
+    if (sent > 0) await sleep(SEND_SPACING_MS)
     try {
       const outcome = await sendMessage(message.id)
       if (outcome === 'sent') {
@@ -566,11 +605,18 @@ export async function sendApproved() {
         held++
       }
     } catch (error) {
+      if (isTransientSendError(error)) {
+        // The provider has told us to slow down. Every further attempt this round would
+        // get the same answer, so stop; these stay approved and go out next time.
+        console.warn('provider is throttling, stopping this pass', error)
+        throttled = true
+        break
+      }
       console.error('send failed', message.id, error)
     }
   }
 
-  return { sent, held }
+  return { sent, held, throttled }
 }
 
 /**
@@ -597,7 +643,7 @@ export async function tick() {
   // work that takes minutes per campaign; with eight campaigns it used to consume the
   // whole invocation and the platform killed the function before a single approved email
   // left. Approved mail is the one thing here that must not be best-effort.
-  const { sent, held } = await sendApproved()
+  const { sent, held } = await sendApproved(Math.min(deadline, Date.now() + 120_000))
 
   // Least recently written to first, so the last campaign in the list is not starved
   // every round once drafting runs out of time. Campaigns that have never drafted lead.

@@ -184,7 +184,14 @@ export default async function OutboxPage() {
       <Tabs defaultValue="pending">
         <TabsList>
           <TabsTrigger value="pending">Waiting ({pending.length})</TabsTrigger>
-          <TabsTrigger value="sent">Sent ({sent.length})</TabsTrigger>
+          {/* Counted separately. The tab used to say "Sent (100)" over a list that was 25
+              delivered and 75 rejected, which is the opposite of what a sent count is for. */}
+          <TabsTrigger value="sent">
+            Sent ({sent.filter((m) => m.status === 'sent').length})
+            {sent.some((m) => m.status === 'failed')
+              ? ` · ${sent.filter((m) => m.status === 'failed').length} failed`
+              : ''}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="mt-4">
