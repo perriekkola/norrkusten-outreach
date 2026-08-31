@@ -64,23 +64,23 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <PageHeader title="Dashboard" description="Pipeline at a glance.">
+      <PageHeader title="Dashboard" description="Where everything stands right now.">
         <div className="flex shrink-0 items-center gap-1.5">
           <ConfirmButton
             action={runTick}
             payload={{}}
             variant="outline"
-            title="Run the whole pipeline now?"
-            description="Brings in finished searches, checks for replies, runs every active campaign, then sends everything already approved. Those emails go to real leads immediately."
+            title="Do everything now?"
+            description="Sends everything already approved, then brings in finished searches, checks for replies and runs every active campaign. The approved emails go to real leads immediately."
             confirmLabel="Run it"
             pendingLabel="Running…"
           >
-            Run pipeline now
+            Run everything now
           </ConfirmButton>
           <Hint>
-            Does everything the twice-daily round does, right now. Brings in finished
-            searches, checks replies, runs each active campaign and sends approved mail. This
-            is the only button on this page that can deliver an email.
+            Does everything the twice-daily round does, right now. It sends approved mail
+            first, then brings in finished searches, checks replies and runs each active
+            campaign. This is the only button on this page that can deliver an email.
           </Hint>
         </div>
       </PageHeader>
@@ -136,8 +136,9 @@ export default async function DashboardPage() {
           {
             title: '3. Approve',
             body:
-              'Emails are written for you, best score first, and wait in the outbox. Nothing ' +
-              'sends until you approve it — unless the campaign has auto-send on.',
+              'Emails are written for you, best score first, and wait in the outbox. ' +
+              'Nothing sends until you approve it, unless the campaign is set to send ' +
+              'without approval.',
             href: '/outbox',
             cta: 'Outbox',
           },
