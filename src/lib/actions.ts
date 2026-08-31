@@ -593,6 +593,49 @@ export async function rescoreCampaign(formData: FormData) {
  * costs nothing and happens the moment you press Run now; for a written one it is the same
  * work the Rewrite button does. Anything already sent is left alone, because it has been.
  */
+/**
+ * Says this was never a reply, and puts the sequence back.
+ *
+ * Header rules catch out-of-office and bounces, but something will always slip through:
+ * a receptionist forwarding, a ticketing system, a colleague looping themselves in. That
+ * costs a lead, because a reply ends their sequence for good and nothing here noticed.
+ *
+ * The intent is set rather than cleared. The mailbox is polled over a two week window, so
+ * simply blanking replied_at would let the very next round match the same email and mark
+ * it replied again, and the button would appear to do nothing.
+ */
+export async function dismissReply(formData: FormData) {
+  await requireUser()
+  const messageId = Number(formData.get('messageId'))
+  if (!Number.isFinite(messageId)) return
+
+  const [message] = (await db()`
+    select enrollment_id, lead_id from messages where id = ${messageId}`) as {
+    enrollment_id: number
+    lead_id: number
+  }[]
+  if (!message) return
+
+  await db()`
+    update messages
+       set replied_at = null, reply_intent = 'not_a_reply', reply_summary = null
+     where id = ${messageId}`
+  await db()`
+    update enrollments set status = 'active'
+     where id = ${message.enrollment_id} and status = 'replied'`
+  // Whatever was dropped when the "reply" landed goes back in the queue, unapproved, so
+  // it is read once more before it goes anywhere.
+  await db()`
+    update messages set status = 'draft'
+     where enrollment_id = ${message.enrollment_id} and status = 'skipped' and sent_at is null`
+  await db()`
+    update leads set status = 'contacted'
+     where id = ${message.lead_id} and status = 'replied'
+       and not exists (select 1 from messages m
+                        where m.lead_id = ${message.lead_id} and m.replied_at is not null)`
+  refresh()
+}
+
 export async function replaceDrafts(formData: FormData) {
   await requireUser()
   const campaignId = Number(formData.get('campaignId'))

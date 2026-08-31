@@ -137,6 +137,7 @@ async function pollMailbox(
         select m.id, m.lead_id, m.enrollment_id, m.subject, m.replied_at, l.email
           from messages m join leads l on l.id = m.lead_id
          where m.provider_id = any(${normalised}::text[]) and m.status = 'sent'
+           and coalesce(m.reply_intent, '') <> 'not_a_reply'
            and (m.replied_at is null or m.reply_text is null
                 or (m.reply_text <> '' and m.reply_intent is null))`) as {
         id: number

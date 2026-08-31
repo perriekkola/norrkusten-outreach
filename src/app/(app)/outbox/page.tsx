@@ -9,6 +9,7 @@ import { db, getSetting } from '@/lib/db'
 import { dailySendCap, leadCooldownDays, roundsPerDay } from '@/lib/engine'
 import { OutboxTable } from './outbox-table'
 import { SentTable } from './sent-table'
+import { RepliesTable } from './replies-table'
 
 export type OutboxRow = {
   id: number
@@ -191,6 +192,12 @@ export default async function OutboxPage() {
     `${SELECT} where m.status in ('sent','failed') order by m.sent_at desc nulls last limit 100`,
   )) as OutboxRow[]
 
+  // Replies are the whole output of this thing, so they get their own list rather than
+  // being a badge somewhere in a hundred rows of sent mail.
+  const replies = (await db().query(
+    `${SELECT} where m.replied_at is not null order by m.replied_at desc limit 200`,
+  )) as OutboxRow[]
+
   return (
     <>
       <PageHeader
@@ -217,6 +224,7 @@ export default async function OutboxPage() {
           <TabsTrigger value="pending">Waiting ({pending.length})</TabsTrigger>
           {/* Counted separately. The tab used to say "Sent (100)" over a list that was 25
               delivered and 75 rejected, which is the opposite of what a sent count is for. */}
+          <TabsTrigger value="replies">Replies ({replies.length})</TabsTrigger>
           <TabsTrigger value="sent">
             Sent ({sent.filter((m) => m.status === 'sent').length})
             {sent.some((m) => m.status === 'failed')
@@ -239,6 +247,10 @@ export default async function OutboxPage() {
           ) : (
             <OutboxTable messages={pending} testEmail={testEmail} signatureFor={signatureFor} />
           )}
+        </TabsContent>
+
+        <TabsContent value="replies" className="mt-4">
+          <RepliesTable replies={replies} />
         </TabsContent>
 
         <TabsContent value="sent" className="mt-4">
