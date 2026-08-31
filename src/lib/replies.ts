@@ -127,14 +127,18 @@ async function pollMailbox(
       const bounce = isBounce(raw, subject, sender)
 
       const normalised = ids.map((value) => (value.startsWith('<') ? value : `<${value}>`))
-      // `reply_text is null` rather than `replied_at is null`, so replies matched before
-      // any of this existed get their text and their reading on the next poll instead of
-      // staying blank for ever.
+      // Matched on missing work rather than on `replied_at is null`, for two reasons.
+      // Replies caught before any of this existed get their text on the next poll instead
+      // of staying blank for ever. And a reading that failed on a bad API call is retried,
+      // since the text was already saved by then and the row would otherwise never be
+      // looked at again — which for an opt_out is the one outcome worth spending twice on.
+      // Nothing successful is ever redone: text present and intent set excludes the row.
       const rows = (await db()`
         select m.id, m.lead_id, m.enrollment_id, m.subject, m.replied_at, l.email
           from messages m join leads l on l.id = m.lead_id
          where m.provider_id = any(${normalised}::text[]) and m.status = 'sent'
-           and (m.replied_at is null or m.reply_text is null)`) as {
+           and (m.replied_at is null or m.reply_text is null
+                or (m.reply_text <> '' and m.reply_intent is null))`) as {
         id: number
         lead_id: number
         enrollment_id: number
