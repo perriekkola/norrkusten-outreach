@@ -137,6 +137,12 @@ assert.ok(isAutoReply('Auto-Submitted: auto-replied\n'), 'RFC 3834 auto-replied'
 assert.ok(isAutoReply('Auto-Submitted: auto-generated\n'), 'auto-generated too')
 assert.ok(isAutoReply('Precedence: bulk\n'), 'bulk precedence')
 assert.ok(isAutoReply('X-Autoreply: yes\n'), 'x-autoreply')
+// Exchange puts this on ordinary mail to stop auto-replies coming back to it. Reading it
+// as a sign of one flagged every reply sent from Microsoft 365, which is most of them.
+assert.ok(
+  !isAutoReply('X-Auto-Response-Suppress: DR, RN, NRN, OOF\n' + REF, 'Re: Nya maskinförordningen'),
+  'a normal Outlook reply is not an auto-reply',
+)
 assert.ok(isAutoReply(REF, 'Automatiskt svar: Nya maskinförordningen'), 'Swedish out-of-office')
 assert.ok(isAutoReply(REF, 'Out of Office'), 'English out-of-office')
 // "no" is the one value meaning a person sent it.

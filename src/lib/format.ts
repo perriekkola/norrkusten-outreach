@@ -101,9 +101,10 @@ export function isAutoReply(rawHeaders: string, subject = ''): boolean {
   if (submitted && submitted !== 'no') return true
 
   if (/^precedence:[ \t]*(bulk|auto[-_]reply|junk)/m.test(headers)) return true
-  if (/^x-(?:autoreply|autorespond|auto-response-suppress|autoreply-from)[ \t]*:/m.test(headers)) {
-    return true
-  }
+  // Not X-Auto-Response-Suppress. Exchange puts that on ordinary outgoing mail to stop
+  // auto-replies coming back to it, so it says nothing about the message carrying it, and
+  // treating it as a signal marked every reply from a Microsoft 365 sender as automatic.
+  if (/^x-(?:autoreply|autorespond|autoreply-from)[ \t]*:/m.test(headers)) return true
 
   return AUTO_SUBJECT.test(subject)
 }

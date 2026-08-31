@@ -99,7 +99,6 @@ async function pollMailbox(
           'precedence',
           'x-autoreply',
           'x-autorespond',
-          'x-auto-response-suppress',
           'content-type',
           'return-path',
           'x-failed-recipients',
@@ -111,20 +110,6 @@ async function pollMailbox(
         (value): value is string => Boolean(value),
       )
       if (!ids.length) continue
-
-      const subject = mail.envelope?.subject ?? ''
-      const sender = mail.envelope?.from?.map((a) => a.address ?? '').join(' ') ?? ''
-
-      // An out-of-office is not an answer. Leaving the sequence running is the whole
-      // point: they are away, not uninterested, and the next step is due in days anyway.
-      if (isAutoReply(raw, subject)) {
-        auto++
-        continue
-      }
-
-      // A bounce is the opposite: the address did not receive it and never will, so the
-      // sequence has to stop even though nobody engaged.
-      const bounce = isBounce(raw, subject, sender)
 
       const normalised = ids.map((value) => (value.startsWith('<') ? value : `<${value}>`))
       // Matched on missing work rather than on `replied_at is null`, for two reasons.
@@ -147,6 +132,25 @@ async function pollMailbox(
         replied_at: string | null
         email: string
       }[]
+
+      // Everything below judges what kind of message this is, and that only makes sense
+      // once it is known to be a reply to something we sent. Judging first counted every
+      // newsletter in the inbox carrying Precedence: bulk as an out-of-office.
+      if (!rows.length) continue
+
+      const subject = mail.envelope?.subject ?? ''
+      const sender = mail.envelope?.from?.map((a) => a.address ?? '').join(' ') ?? ''
+
+      // An out-of-office is not an answer. Leaving the sequence running is the whole
+      // point: they are away, not uninterested, and the next step is due in days anyway.
+      if (isAutoReply(raw, subject)) {
+        auto++
+        continue
+      }
+
+      // A bounce is the opposite: the address did not receive it and never will, so the
+      // sequence has to stop even though nobody engaged.
+      const bounce = isBounce(raw, subject, sender)
 
       for (const row of rows) {
         if (bounce) {
