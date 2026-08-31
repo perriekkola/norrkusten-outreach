@@ -384,7 +384,8 @@ export async function enrollLeads(formData: FormData) {
     await db().query(
       `insert into enrollments (campaign_id, lead_id)
        select $3, l.id from leads l
-        where ${where} and l.status <> 'rejected' and not ${LEAD_IS_SUPPRESSED}
+        where ${where} and l.status not in ('rejected', 'bounced')
+          and not ${LEAD_IS_SUPPRESSED}
        on conflict (campaign_id, lead_id) do update set status = 'active'
          where enrollments.status = 'removed'`,
       [...params, campaignId],

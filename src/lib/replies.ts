@@ -169,9 +169,16 @@ async function pollMailbox(
                    error = ${`Bounced: ${subject}`.slice(0, 500)}
              where id = ${row.id}`
           await db()`update leads set status = 'bounced' where id = ${row.lead_id}`
+          // Also from 'replied', not just from 'active'. Before bounces were told apart
+          // these enrollments were marked replied, and only the message was corrected
+          // above, leaving twelve dead addresses recorded as people who answered. Guarded
+          // so a lead who genuinely replied and later bounced keeps the reply.
           await db()`
             update enrollments set status = 'bounced'
-             where id = ${row.enrollment_id} and status = 'active'`
+             where id = ${row.enrollment_id} and status in ('active', 'replied')
+               and not exists (select 1 from messages m
+                                where m.enrollment_id = ${row.enrollment_id}
+                                  and m.replied_at is not null)`
           await db()`
             update messages set status = 'skipped'
              where enrollment_id = ${row.enrollment_id} and status in ('draft', 'approved')`

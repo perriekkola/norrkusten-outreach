@@ -449,7 +449,10 @@ export async function runCampaign(
       `insert into enrollments (campaign_id, lead_id)
        select $1, l.id from leads l
         where l.search_id = any($2::int[])
-          and l.status <> 'rejected'
+          -- 'bounced' as well as 'rejected'. The address does not exist, so enrolling it
+          -- somewhere else only buys another bounce, and bounce rate is charged to the
+          -- domain rather than to the campaign that earned it.
+          and l.status not in ('rejected', 'bounced')
           and not ${LEAD_IS_SUPPRESSED}
         order by l.id limit $3
        on conflict (campaign_id, lead_id) do nothing
