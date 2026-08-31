@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/page-header'
 import { SubmitButton } from '@/components/submit-button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { UrlTabs } from '@/components/url-tabs'
 import { deleteCampaign, dropWeak, setCampaignStatus } from '@/lib/actions'
 import { ConfirmButton } from '@/components/confirm-button'
 import { Hint } from '@/components/hint'
@@ -188,7 +189,7 @@ export default async function CampaignPage({ params, searchParams }: PageProps<'
         </form>
       </PageHeader>
 
-      <Tabs defaultValue="leads">
+      <UrlTabs defaultValue="leads">
         <TabsList>
           <TabsTrigger value="leads">Enrolled ({counts.total})</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -242,7 +243,7 @@ export default async function CampaignPage({ params, searchParams }: PageProps<'
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+      </UrlTabs>
     </>
   )
 }
