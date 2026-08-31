@@ -20,8 +20,14 @@ on:
   schedule:
     # Every 30 minutes, 07:00-16:00 UTC, Monday to Friday. That is 09:00-18:00 Swedish
     # summer time: office hours, when a cold email is read rather than buried overnight.
-    # 20 rounds a day, so set "Rounds a day" to 20.
-    - cron: '0,30 7-16 * * 1-5'
+    #
+    # Five past, not on the hour. vercel.json still fires at 07:00 and 13:00 UTC as a
+    # fallback for when GitHub skips a scheduled run, and two rounds starting at the same
+    # instant would each be granted a full round's allowance and between them double the
+    # rate. The offset keeps them apart.
+    #
+    # 20 rounds here plus 2 from vercel.json, so set "Rounds a day" to 22.
+    - cron: '5,35 7-16 * * 1-5'
   # Lets you trigger one by hand from the Actions tab without waiting.
   workflow_dispatch:
 
