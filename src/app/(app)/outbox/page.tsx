@@ -153,12 +153,14 @@ export default async function OutboxPage() {
       order by e.score desc nulls last, m.step, m.id limit 200`,
   )) as OutboxRow[]
 
-  // Approved with an error on it means the mail server refused it for now and it will be
-  // tried again. Without this the queue just looks stuck and nobody can tell why.
+  // Only worth saying while it is actually happening. A refused message keeps its error
+  // text until it sends, so hours after a burst the count is still high even though every
+  // round since went through cleanly — which reads as an unresolved problem when there
+  // is none. The last round's own verdict is what decides whether to say anything.
+  const throttledLastRound = (await getSetting('last_round_throttled', 'no')) === 'yes'
   const [heldBack] = (await db()`
-    select count(*)::int as n from messages m
-     join enrollments e on e.id = m.enrollment_id
-    where m.status = 'approved' and m.error is not null`) as { n: number }[]
+    select count(*)::int as n from messages
+     where status = 'approved' and error is not null`) as { n: number }[]
 
   const testEmail = await getSetting('test_email')
   const [cap, cooldown] = await Promise.all([dailySendCap(), leadCooldownDays()])
@@ -188,15 +190,13 @@ export default async function OutboxPage() {
 
       <Schedule cap={cap} cooldown={cooldown} auto={autoCount} />
 
-      {heldBack.n > 0 ? (
+      {throttledLastRound && heldBack.n > 0 ? (
         <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed">
-          <strong>
-            The mail server asked us to slow down, so {heldBack.n}{' '}
-            {heldBack.n === 1 ? 'email is' : 'emails are'} waiting.
-          </strong>{' '}
-          {heldBack.n === 1 ? 'It is' : 'They are'} still approved and will go out on the next
-          rounds, a few at a time. Nothing has been lost and there is nothing to press. If this
-          number never falls, raise the seconds between emails in Settings.
+          <strong>The mail server asked us to slow down on the last round.</strong>{' '}
+          {heldBack.n} {heldBack.n === 1 ? 'email is' : 'emails are'} still approved and will
+          go out on the following rounds, a few at a time. Nothing has been lost and there is
+          nothing to press. If this keeps happening, raise the seconds between emails in
+          Settings.
         </p>
       ) : null}
 

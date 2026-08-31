@@ -1,7 +1,7 @@
 import 'server-only'
 import { getDatasetItems, getRun } from './apify'
 import { describeApiError, draftEmailChecked, qualifyLead, researchCompany } from './ai'
-import { db, getSetting, jsonb, type Campaign, type Lead, type Message } from './db'
+import { db, getSetting, setSetting, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
 import { fillTemplate, normalizeEmail } from './format'
 import { checkReplies } from './replies'
@@ -694,6 +694,11 @@ export async function tick() {
       console.error('campaign pass failed', campaign.id, error)
     }
   }
+
+  // Remember whether the mail server pushed back, so the outbox can tell "it is happening
+  // now" from "it happened this morning and these are still in the queue". A message keeps
+  // its error text until it sends, so counting errors alone cannot tell those apart.
+  await setSetting('last_round_throttled', throttled ? 'yes' : 'no')
 
   return { replies, drafted, sent, held, throttled }
 }
