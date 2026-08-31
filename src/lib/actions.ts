@@ -112,9 +112,15 @@ export async function saveSendingLimits(_prev: State, formData: FormData): Promi
   const spacing = Math.max(0, Math.min(120, Number(formData.get('send_spacing_seconds')) || 0))
   await setSetting('daily_send_cap', String(cap))
   await setSetting('lead_cooldown_days', String(cooldown))
+  const rounds = Math.max(1, Math.min(48, Number(formData.get('rounds_per_day')) || 2))
   await setSetting('send_spacing_seconds', String(spacing))
+  await setSetting('rounds_per_day', String(rounds))
   refresh()
-  return { ok: `Saved. ${cap} a day per mailbox, ${spacing}s between emails.` }
+  return {
+    ok:
+      `Saved. ${cap} a day per mailbox, about ${Math.ceil(cap / rounds)} per round ` +
+      `across ${rounds} rounds, ${spacing}s between emails.`,
+  }
 }
 
 /* --------------------------------------------------------------- suppression */

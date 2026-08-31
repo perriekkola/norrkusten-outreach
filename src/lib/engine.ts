@@ -330,10 +330,30 @@ export const dailySendCap = async () =>
   Number(await getSetting('daily_send_cap', String(DEFAULT_DAILY_SEND_CAP))) ||
   DEFAULT_DAILY_SEND_CAP
 
+/**
+ * How many times a day the schedule calls /api/cron.
+ *
+ * The day's allowance is divided by this, so more rounds means smaller batches rather
+ * than more email. It used to be the literal number 2, which meant adding a third round
+ * changed nothing: the first two took half the allowance each and the rest found none
+ * left. Spreading the same volume over more of the day is the point.
+ *
+ * It has to be told, not counted, because the caller might be a GitHub Action or a
+ * crontab rather than vercel.json. Keep it matching the real schedule.
+ */
+export const DEFAULT_ROUNDS_PER_DAY = 2
+
+export const roundsPerDay = async () =>
+  Math.max(
+    1,
+    Number(await getSetting('rounds_per_day', String(DEFAULT_ROUNDS_PER_DAY))) ||
+      DEFAULT_ROUNDS_PER_DAY,
+  )
+
 /** Mailbox id (0 = the env fallback) -> how many more emails this pass may send from it. */
 async function sendAllowance(): Promise<(mailboxId: number) => number> {
   const cap = await dailySendCap()
-  const perPass = Math.ceil(cap / 2)
+  const perPass = Math.ceil(cap / (await roundsPerDay()))
 
   // Rolling 24 hours, not "today": the 07:00 pass must not be handed a fresh allowance
   // by a midnight it never saw. Rows predating the mailbox_id column fall into the

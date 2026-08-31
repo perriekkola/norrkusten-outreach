@@ -1,0 +1,52 @@
+name: Outreach rounds
+
+# Spreads the day's sending instead of firing it in two bursts.
+#
+# vercel.json can do this too, but only on a paid plan: Hobby runs each cron once a day,
+# which is why there are two entries there doing one round each. GitHub Actions has no such
+# limit and the repo is already here, so this costs nothing.
+#
+# The endpoint is a plain authenticated GET. Nothing about it is specific to any host, so
+# a crontab on your own machine works exactly as well:
+#   curl -H "Authorization: Bearer $CRON_SECRET" https://your-site/api/cron
+#
+# Before enabling, set two repository secrets under Settings -> Secrets -> Actions:
+#   SITE_URL      https://your-site.vercel.app   (no trailing slash)
+#   CRON_SECRET   the same value the site has
+# and set "Rounds a day" in the app's Settings to match the schedule below, or the early
+# rounds will spend the whole daily allowance and the later ones will find none left.
+
+on:
+  schedule:
+    # Every 30 minutes, 07:00-16:00 UTC, Monday to Friday. That is 09:00-18:00 Swedish
+    # summer time: office hours, when a cold email is read rather than buried overnight.
+    # 20 rounds a day, so set "Rounds a day" to 20.
+    - cron: '0,30 7-16 * * 1-5'
+  # Lets you trigger one by hand from the Actions tab without waiting.
+  workflow_dispatch:
+
+# One round at a time. Two overlapping rounds would each get the full per-round
+# allowance and between them double the intended rate.
+concurrency:
+  group: outreach-rounds
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run a round
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "SITE_URL and CRON_SECRET repository secrets are not set." >&2
+            exit 1
+          fi
+          # --fail-with-body so a 401 or 500 fails the run loudly and shows the reason,
+          # rather than passing silently and leaving email unsent for days.
+          curl --fail-with-body --silent --show-error --max-time 310 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${SITE_URL}/api/cron"

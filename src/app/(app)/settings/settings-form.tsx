@@ -31,10 +31,12 @@ export function SendingLimitsForm({
   cap,
   cooldown,
   spacing,
+  rounds,
 }: {
   cap: number
   cooldown: number
   spacing: number
+  rounds: number
 }) {
   const [state, action, pending] = useActionState(saveSendingLimits, {})
 
@@ -103,6 +105,30 @@ export function SendingLimitsForm({
           />
           <p className="text-muted-foreground text-xs">
             At most about {spacing > 0 ? Math.floor(60 / spacing) : 60} a minute.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="rounds_per_day" className="flex items-center gap-1.5">
+            Rounds a day
+            <Hint>
+              How many times a day the schedule runs. The daily allowance is divided by
+              this, so more rounds means smaller batches at a time, not more email. Set it
+              to match the real schedule: if you add times to vercel.json or point a GitHub
+              Action at the site, change this too, or the early rounds will use the whole
+              day and the later ones will find nothing left.
+            </Hint>
+          </Label>
+          <Input
+            id="rounds_per_day"
+            name="rounds_per_day"
+            type="number"
+            min={1}
+            max={48}
+            defaultValue={rounds}
+          />
+          <p className="text-muted-foreground text-xs">
+            About {Math.ceil(cap / Math.max(1, rounds))} per mailbox each round.
           </p>
         </div>
       </div>
