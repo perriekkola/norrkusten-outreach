@@ -389,8 +389,10 @@ export type CampaignPass = {
 export async function runCampaign(
   campaignId: number,
   report: (event: { phase: string; detail?: string }) => void = () => {},
+  /** Shared when several campaigns run in one invocation, so they cannot overrun it together. */
+  sharedDeadline?: number,
 ): Promise<CampaignPass> {
-  const deadline = Date.now() + PASS_BUDGET_MS
+  const deadline = sharedDeadline ?? Date.now() + PASS_BUDGET_MS
   const empty = { enrolled: 0, scored: 0, drafted: 0, failed: 0, reason: '', unscored: 0, due: 0 }
   const [campaign] = (await db()`select * from campaigns where id = ${campaignId}`) as Campaign[]
   if (!campaign) return empty
@@ -522,25 +524,13 @@ export async function rewriteDrafts(
   return { rewritten, failed: pass.failed, reason: pass.reason, pending: left.map((r) => r.id) }
 }
 
-/** One pass: draft what is due, send what is approved. */
-export async function runSequences() {
-  const due = (await db()`
-    select e.id from enrollments e
-      join campaigns c on c.id = e.campaign_id
-     where e.status = 'active' and c.status = 'active' and e.next_send_at <= now()
-       and e.score >= c.min_score
-     order by e.score desc, e.next_send_at limit 100`) as { id: number }[]
-
-  const drafted: number[] = []
-  for (const enrollment of due) {
-    try {
-      const id = await draftForEnrollment(enrollment.id)
-      if (id) drafted.push(id)
-    } catch (error) {
-      console.error('draft failed', enrollment.id, error)
-    }
-  }
-
+/**
+ * Send every approved message the daily allowance permits, best scores first.
+ *
+ * No model calls, so this is seconds of work rather than minutes. That matters: it used to
+ * sit behind the drafting, and drafting is what runs out of time.
+ */
+export async function sendApproved() {
   // Highest-scoring leads go out first, so a partial run still hits the best ones — and
   // a pass that runs out of allowance has spent it on the best leads, not the first ones.
   const approved = (await db()`
@@ -580,29 +570,54 @@ export async function runSequences() {
     }
   }
 
-  return { drafted: drafted.length, sent, held }
+  return { sent, held }
 }
 
+/**
+ * How long one automatic round may spend writing emails.
+ *
+ * The whole invocation gets 300s from the platform, and sending now happens before any of
+ * this, so the only thing this bounds is drafting. Stopping at 240s leaves room for a
+ * draft that is already in flight to finish.
+ */
+const TICK_BUDGET_MS = 240_000
+
 export async function tick() {
+  const deadline = Date.now() + TICK_BUDGET_MS
   await ingestSearches()
 
-  // Replies before anything writes: a lead who answered must not get another email,
-  // and must not have one drafted for them either — that is a wasted model call.
+  // Replies before anything else: a lead who answered must not get the email already
+  // sitting approved for them, and must not have another one drafted either.
   const replies = await checkReplies().catch((error) => {
     console.error('reply check failed', error)
     return 0
   })
 
-  // Each active campaign pulls, scores and drafts for itself.
+  // Sending goes before drafting, and the order is the entire point. Drafting is model
+  // work that takes minutes per campaign; with eight campaigns it used to consume the
+  // whole invocation and the platform killed the function before a single approved email
+  // left. Approved mail is the one thing here that must not be best-effort.
+  const { sent, held } = await sendApproved()
+
+  // Least recently written to first, so the last campaign in the list is not starved
+  // every round once drafting runs out of time. Campaigns that have never drafted lead.
   const active = (await db()`
-    select id from campaigns where status = 'active' order by id`) as { id: number }[]
+    select c.id from campaigns c
+     where c.status = 'active'
+     order by (select max(m.created_at) from messages m
+                 join enrollments e on e.id = m.enrollment_id
+                where e.campaign_id = c.id) asc nulls first, c.id`) as { id: number }[]
+
+  let drafted = 0
   for (const campaign of active) {
+    if (Date.now() > deadline) break
     try {
-      await runCampaign(campaign.id)
+      const pass = await runCampaign(campaign.id, () => {}, deadline)
+      drafted += pass.drafted
     } catch (error) {
       console.error('campaign pass failed', campaign.id, error)
     }
   }
 
-  return { replies, ...(await runSequences()) }
+  return { replies, drafted, sent, held }
 }

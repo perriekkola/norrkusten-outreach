@@ -49,6 +49,10 @@ const TILES = [
 
 export const metadata = { title: 'Dashboard' }
 
+// "Run everything now" calls the same tick the schedule does, and drafting can take
+// minutes. Without this the action is cut off at the default limit.
+export const maxDuration = 300
+
 export default async function DashboardPage() {
   let data: Stats | null = null
   let error: string | null = null
