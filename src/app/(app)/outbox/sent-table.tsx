@@ -6,6 +6,7 @@ import { Fragment, useState } from 'react'
 import { ConfirmButton } from '@/components/confirm-button'
 import { SortHeader } from '@/components/sortable'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -88,16 +89,27 @@ export function SentTable({ messages, signatureFor }: {
   const [sort, setSort] = useState<Sort<SortKey> | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [query, setQuery] = useState('')
+  /**
+   * Delivered by default.
+   *
+   * A rejection is worth keeping and worth reading, but it is not what this tab is for,
+   * and mixing the two makes every count on the page mean two things at once.
+   */
+  const [show, setShow] = useState<'sent' | 'failed' | 'all'>('sent')
+
+  const delivered = messages.filter((m) => m.status === 'sent').length
+  const rejected = messages.length - delivered
 
   // Everything on screen is already loaded, so filtering here beats a round trip.
   const needle = query.trim().toLowerCase()
+  const visible = messages.filter((m) => show === 'all' || m.status === show)
   const found = needle
-    ? messages.filter((m) =>
+    ? visible.filter((m) =>
         [m.lead_name, m.email, m.subject, m.campaign_name, m.company_name, m.reply_summary, m.reply_text]
           .filter(Boolean)
           .some((field) => String(field).toLowerCase().includes(needle)),
       )
-    : messages
+    : visible
   const rows = sortRows(found, sort, sortValue)
 
   return (
@@ -110,8 +122,33 @@ export function SentTable({ messages, signatureFor }: {
           className="h-9 w-full sm:w-96"
           aria-label="Search sent emails"
         />
+        <Button
+          size="sm"
+          variant={show === 'sent' ? 'secondary' : 'ghost'}
+          onClick={() => setShow('sent')}
+        >
+          Delivered {delivered}
+        </Button>
+        {rejected > 0 ? (
+          <>
+            <Button
+              size="sm"
+              variant={show === 'failed' ? 'secondary' : 'ghost'}
+              onClick={() => setShow('failed')}
+            >
+              Failed {rejected}
+            </Button>
+            <Button
+              size="sm"
+              variant={show === 'all' ? 'secondary' : 'ghost'}
+              onClick={() => setShow('all')}
+            >
+              All {messages.length}
+            </Button>
+          </>
+        ) : null}
         <span className="text-muted-foreground text-xs tabular-nums">
-          {needle ? `${rows.length} of ${messages.length}` : `${messages.length}`}
+          {needle ? `${rows.length} shown` : ''}
         </span>
       </div>
 
@@ -295,7 +332,7 @@ export function SentTable({ messages, signatureFor }: {
 
       {rows.length === 0 ? (
         <p className="text-muted-foreground py-6 text-center text-sm">
-          Nothing matches “{query}”.
+          {needle ? `Nothing matches “${query}”.` : 'Nothing here.'}
         </p>
       ) : null}
     </div>
