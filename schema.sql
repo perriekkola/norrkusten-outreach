@@ -129,6 +129,12 @@ alter table leads drop column if exists reasons;
 alter table leads drop column if exists angle;
 create index if not exists idx_enroll_score on enrollments(campaign_id, score desc nulls last);
 
+-- What the reply actually said, so a reply can be triaged without leaving the app, and
+-- so an explicit "take me off your list" can be acted on rather than waiting to be read.
+alter table messages add column if not exists reply_text    text;
+alter table messages add column if not exists reply_intent  text;  -- see classifyReply
+alter table messages add column if not exists reply_summary text;
+
 -- Not every campaign wants a written-per-lead email. A fixed campaign sends the same
 -- subject and body to everyone, with only the placeholders filled in per lead.
 alter table campaigns add column if not exists writing_mode text not null default 'ai';

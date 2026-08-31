@@ -24,6 +24,9 @@ export type OutboxRow = {
   clicked_at: string | null
   click_count: number
   replied_at: string | null
+  reply_text: string | null
+  reply_intent: string | null
+  reply_summary: string | null
   open_count: number
   error: string | null
   lead_id: number
@@ -37,7 +40,7 @@ export type OutboxRow = {
 
 const SELECT = `
   select m.id, m.enrollment_id, m.subject, m.body, m.status, m.step, m.sent_at, m.opened_at,
-         m.replied_at,
+         m.replied_at, m.reply_text, m.reply_intent, m.reply_summary,
          m.created_at,
          m.open_count, m.clicked_at, m.click_count, m.error, l.id as lead_id, l.full_name as lead_name, l.email,
          l.company_name, c.name as campaign_name, c.id as campaign_id, c.auto_send

@@ -26,6 +26,8 @@ const MODEL = {
   draft: process.env.CLAUDE_MODEL_DRAFT || 'claude-opus-5',
   /** Once per campaign, and every later email depends on it — worth the best model. */
   campaign: process.env.CLAUDE_MODEL_CAMPAIGN || 'claude-opus-5',
+  /** Reading a short reply and putting it in one of seven boxes. Cheap work. */
+  reply: process.env.CLAUDE_MODEL_REPLY || 'claude-haiku-4-5',
 }
 
 /** Haiku 4.5 predates both `output_config.effort` and the 2026 web-search tool. */
@@ -144,6 +146,63 @@ export async function qualifyLead(lead: Lead, icp: string): Promise<Qualificatio
   if (!message.parsed_output) throw new Error('Claude returned no qualification')
   const { reasons, angle, ...rest } = message.parsed_output
   return { ...rest, reasons: decodeEscapes(reasons), angle: decodeEscapes(angle) }
+}
+
+/* -------------------------------------------------------------------- reply */
+
+const ReplyRead = z.object({
+  intent: z
+    .enum(['interested', 'question', 'not_now', 'not_interested', 'opt_out', 'referral', 'other'])
+    .describe(
+      'opt_out ONLY when they ask not to be contacted again, or to be removed from a list. ' +
+        'not_interested is a plain no to this offer, which is not the same thing. not_now ' +
+        'is interest with bad timing. referral is being pointed at a colleague.',
+    ),
+  summary: z
+    .string()
+    .describe('One short line saying what they want, in the language they wrote in.'),
+})
+
+export type ReplyRead = z.infer<typeof ReplyRead>
+
+/**
+ * Reads one reply and says what it amounts to.
+ *
+ * The distinction that matters is opt_out against not_interested. "Not for us, thanks" is
+ * a no to the offer; "remove me from your list" is a request that carries a legal
+ * obligation and gets acted on without waiting for someone to read it. Everything else is
+ * only a label to help triage, so a wrong guess there costs nothing.
+ */
+export async function classifyReply(reply: string, sentSubject: string): Promise<ReplyRead> {
+  const message = await anthropic().messages.parse({
+    model: MODEL.reply,
+    max_tokens: 1000,
+    output_config: { format: zodOutputFormat(ReplyRead) },
+    system: [
+      'You read replies to cold outreach and put each in one box. Most are Swedish.',
+      '',
+      'Be careful with one distinction. A plain no to the offer is not_interested. A request',
+      'to stop being contacted, to be removed, to unsubscribe, or anger at being written to',
+      'at all is opt_out, and it is acted on automatically, so do not reach for it when',
+      'somebody merely says no thank you to this particular course.',
+      '',
+      'Someone forwarding you to a colleague is referral. Someone interested but saying later,',
+      'after the summer, or next budget year is not_now. Judge only what is written; do not',
+      'infer enthusiasm from politeness, which Swedish business email has plenty of.',
+    ].join('\n'),
+    messages: [
+      {
+        role: 'user',
+        content: `We wrote to them with the subject: ${sentSubject}\n\nThey replied:\n${reply}`,
+      },
+    ],
+  })
+  guardRefusal(message)
+  if (!message.parsed_output) throw new Error('Claude returned no reading of the reply')
+  return {
+    intent: message.parsed_output.intent,
+    summary: decodeEscapes(message.parsed_output.summary),
+  }
 }
 
 /* ----------------------------------------------------------------- research */

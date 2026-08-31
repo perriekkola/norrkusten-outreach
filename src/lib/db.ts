@@ -136,8 +136,22 @@ export type Message = {
   click_count: number
   clicked_at: string | null
   replied_at: string | null
+  /** The reply itself, quoted history stripped. Null until somebody answers. */
+  reply_text: string | null
+  reply_intent: ReplyIntent | null
+  reply_summary: string | null
   created_at: string
 }
+
+/** What a reply amounts to. `opt_out` is the one that acts on its own. */
+export type ReplyIntent =
+  | 'interested'
+  | 'question'
+  | 'not_now'
+  | 'not_interested'
+  | 'opt_out'
+  | 'referral'
+  | 'other'
 
 export async function getSetting(key: string, fallback = ''): Promise<string> {
   const rows = (await db()`select value from settings where key = ${key}`) as { value: string }[]

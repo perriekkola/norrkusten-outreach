@@ -21,6 +21,17 @@ import { sortRows, type Sort } from '@/lib/sort'
 import { cn } from '@/lib/utils'
 import type { OutboxRow } from './page'
 
+/** What each reading means, and how loudly to say it. */
+const INTENT: Record<string, { label: string; className: string }> = {
+  interested: { label: 'interested', className: 'bg-green-500/15 text-green-700 dark:text-green-400' },
+  question: { label: 'question', className: 'bg-green-500/15 text-green-700 dark:text-green-400' },
+  not_now: { label: 'later', className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
+  referral: { label: 'referred on', className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
+  not_interested: { label: 'not interested', className: 'bg-muted text-muted-foreground' },
+  opt_out: { label: 'asked to stop', className: 'bg-destructive/15 text-destructive' },
+  other: { label: 'replied', className: 'bg-muted text-muted-foreground' },
+}
+
 const SENT_AT = new Intl.DateTimeFormat('sv-SE', {
   day: 'numeric',
   month: 'short',
@@ -32,8 +43,20 @@ const SENT_AT = new Intl.DateTimeFormat('sv-SE', {
 type SortKey = 'lead' | 'subject' | 'campaign' | 'sent' | 'engagement'
 
 /** Replied beats clicked beats opened, so sorting brings the warmest to the top. */
+const WARMTH: Record<string, number> = {
+  interested: 6,
+  question: 6,
+  not_now: 5,
+  referral: 4,
+  other: 3,
+  not_interested: 2,
+  opt_out: 1,
+}
+
 const engagement = (m: OutboxRow) =>
-  (m.replied_at ? 100 : 0) + (m.clicked_at ? 10 : 0) + (m.opened_at ? 1 : 0)
+  (m.replied_at ? 100 + (WARMTH[m.reply_intent ?? ''] ?? 0) : 0) +
+  (m.clicked_at ? 10 : 0) +
+  (m.opened_at ? 1 : 0)
 
 const sortValue = (m: OutboxRow, key: SortKey): string | number => {
   switch (key) {
@@ -70,7 +93,7 @@ export function SentTable({ messages, signatureFor }: {
   const needle = query.trim().toLowerCase()
   const found = needle
     ? messages.filter((m) =>
-        [m.lead_name, m.email, m.subject, m.campaign_name, m.company_name]
+        [m.lead_name, m.email, m.subject, m.campaign_name, m.company_name, m.reply_summary, m.reply_text]
           .filter(Boolean)
           .some((field) => String(field).toLowerCase().includes(needle)),
       )
@@ -159,7 +182,14 @@ export function SentTable({ messages, signatureFor }: {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {message.replied_at ? <Badge>replied</Badge> : null}
+                        {message.replied_at ? (
+                          <Badge
+                            className={INTENT[message.reply_intent ?? 'other']?.className}
+                            variant="secondary"
+                          >
+                            {INTENT[message.reply_intent ?? 'other']?.label ?? 'replied'}
+                          </Badge>
+                        ) : null}
                         {message.clicked_at ? (
                           <Badge>
                             clicked{message.click_count > 1 ? ` ×${message.click_count}` : ''}
@@ -221,6 +251,27 @@ export function SentTable({ messages, signatureFor }: {
                           >
                             {message.email} →
                           </Link>
+                          {message.reply_text ? (
+                            <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-3">
+                              <div className="mb-1 text-xs font-medium">
+                                They replied
+                                {message.reply_summary ? (
+                                  <span className="text-muted-foreground font-normal">
+                                    {' '}
+                                    · {message.reply_summary}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-sm whitespace-pre-wrap">{message.reply_text}</p>
+                              {message.reply_intent === 'opt_out' ? (
+                                <p className="text-destructive mt-2 text-xs">
+                                  Blocked automatically. They will not be written to again from
+                                  any campaign.
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+
                           <div className="font-medium">{message.subject}</div>
                           <p className="text-sm whitespace-pre-wrap">{message.body}</p>
                           {signatureFor[message.campaign_id] ? (

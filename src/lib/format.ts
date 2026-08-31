@@ -109,6 +109,46 @@ export function isAutoReply(rawHeaders: string, subject = ''): boolean {
 }
 
 /**
+ * The part of a reply the person actually wrote.
+ *
+ * Deliberately rough rather than a MIME parser. Everything downstream is a model reading a
+ * few lines to decide what someone wants, and for that a stray boundary marker costs
+ * nothing while a dependency that has to be kept current costs something every month.
+ *
+ * What it does remove is the quoted original, because leaving it in means classifying our
+ * own email instead of their answer, and the quote is usually the longer half.
+ */
+export function replyText(raw: string, limit = 4000): string {
+  const withoutHtml = raw
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+
+  const lines: string[] = []
+  for (const line of withoutHtml.split(/\r?\n/)) {
+    // MIME scaffolding, not prose.
+    if (/^--[-=_a-z0-9]{8,}/i.test(line)) continue
+    if (/^(content-type|content-transfer-encoding|content-disposition|mime-version):/i.test(line)) {
+      continue
+    }
+    // The quoted original, in the several shapes clients write it.
+    if (/^\s*>/.test(line)) continue
+    if (/^\s*(-{2,}\s*)?(original message|ursprungligt meddelande)\b/i.test(line)) break
+    // "Den 31 aug 2026 kl 09:12 skrev Per <per@x.se>:" and its English twin. The trailing
+    // colon is what keeps this off an ordinary sentence that happens to contain "skrev".
+    if (/^\s*(on|den)\b.*\b(wrote|skrev)\b.*:\s*$/i.test(line)) break
+    if (/^\s*(from|från|sent|skickat|to|till):\s/i.test(line) && lines.length) break
+    lines.push(line)
+  }
+
+  const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return text.length > limit ? `${text.slice(0, limit)}…` : text
+}
+
+/**
  * Is this the mail system reporting a failure rather than a person writing back?
  *
  * A bounce quotes the original message, so it arrives with the same References and counts

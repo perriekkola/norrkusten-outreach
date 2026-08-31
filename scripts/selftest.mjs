@@ -99,7 +99,35 @@ assert.deepEqual(matchLocations(['sweden', 'Sweden']), ['sweden'], 'duplicates c
 
 // Every shape a scraper hands back for one person has to collapse to one row, because
 // the unique index on leads.email is the only thing stopping the duplicate.
-const { isAutoReply, isBounce, referencedIds } = await import('../src/lib/format.ts')
+const { isAutoReply, isBounce, referencedIds, replyText } = await import('../src/lib/format.ts')
+
+// The quoted original is usually the longer half of a reply. Leaving it in means the
+// model reads our own email back and classifies that instead of the answer.
+const swedishReply = [
+  'Hej Per,',
+  '',
+  'Tack, det här är intressant. Kan du skicka mer info om priset?',
+  '',
+  'Den 31 aug 2026 kl 09:12 skrev Per Riekkola <per@norrkusten.se>:',
+  '> Nya maskinförordningen gäller från januari 2027',
+  '> Läs mer här: https://norrkusten.se/kurser',
+].join('\n')
+const read = replyText(swedishReply)
+assert.ok(read.includes('Kan du skicka mer info'), 'keeps what they wrote')
+assert.ok(!read.includes('Nya maskinförordningen'), 'drops the quoted original')
+assert.ok(!read.includes('skrev Per Riekkola'), 'drops the attribution line')
+
+assert.ok(
+  !replyText('Hej\n\n-----Original Message-----\nFrom: per@x.se\nHemligt').includes('Hemligt'),
+  'drops an Outlook-style quote',
+)
+assert.equal(
+  replyText('Content-Type: text/plain\n\n<p>Hej <b>Per</b></p>').replace(/\s+/g, ' ').trim(),
+  'Hej Per',
+  'strips MIME headers and tags',
+)
+assert.ok(replyText('a'.repeat(9000)).length < 4100, 'long replies are cut')
+
 
 // Every one of these arrives with the original References attached, so without telling
 // them apart they all count as a reply: the sequence stops and the reply rate reads high.
