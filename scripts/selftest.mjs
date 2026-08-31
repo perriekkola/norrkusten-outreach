@@ -702,5 +702,33 @@ assert.equal(
   'only enrollments with a sent email keep their score through a re-score',
 )
 
+/* ------------------------------------------------------------------- runs */
+
+// One row per round, written at the start and closed at the end. The update has to find
+// the row it opened, or a round that fails leaves nothing behind and the Runs page shows
+// a round still going for ever.
+const [opened] = await q(`insert into runs (started_at) values (now()) returning id`)
+assert.ok(opened?.id, 'a round can open its row')
+
+await q(
+  `update runs set finished_at = now(), ok = true, result = $2::jsonb where id = $1`,
+  [opened.id, JSON.stringify({ sent: 3, drafted: 1, throttled: false })],
+)
+const [done] = await q(`select ok, result, finished_at from runs where id = $1`, [opened.id])
+assert.equal(done.ok, true, 'and close it')
+assert.equal(done.result.sent, 3, 'with what it did readable back out of jsonb')
+assert.ok(done.finished_at, 'and a finish time, which is what "still going" keys off')
+
+const [failed] = await q(`insert into runs (started_at) values (now()) returning id`)
+await q(`update runs set finished_at = now(), ok = false, error = $2 where id = $1`, [
+  failed.id,
+  'boom',
+])
+assert.equal(
+  (await q(`select error from runs where ok = false`))[0].error,
+  'boom',
+  'a round that threw records why',
+)
+
 await db.close()
 console.log('selftest: all checks passed')

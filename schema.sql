@@ -129,6 +129,19 @@ alter table leads drop column if exists reasons;
 alter table leads drop column if exists angle;
 create index if not exists idx_enroll_score on enrollments(campaign_id, score desc nulls last);
 
+-- One row per round, so a bad afternoon can be looked at afterwards. Rounds happen
+-- twenty times a day on a schedule nobody is watching, and until this the only record was
+-- a single settings row holding the most recent one.
+create table if not exists runs (
+  id          serial primary key,
+  started_at  timestamptz not null default now(),
+  finished_at timestamptz,
+  ok          boolean,
+  result      jsonb,      -- what the round did: sent, drafted, bounced, throttled...
+  error       text        -- set instead when it threw
+);
+create index if not exists idx_runs_started on runs(started_at desc);
+
 -- What the reply actually said, so a reply can be triaged without leaving the app, and
 -- so an explicit "take me off your list" can be acted on rather than waiting to be read.
 alter table messages add column if not exists reply_text    text;

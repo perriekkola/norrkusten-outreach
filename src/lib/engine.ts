@@ -661,8 +661,32 @@ export async function sendApproved(deadline = Date.now() + 180_000) {
  */
 const TICK_BUDGET_MS = 240_000
 
+/**
+ * Everything one round does, recorded whether it works or not.
+ *
+ * Rounds run twenty times a day on a schedule nobody watches. Without a row per round the
+ * only evidence a round went wrong is what it failed to do, which is invisible.
+ */
 export async function tick() {
   const deadline = Date.now() + TICK_BUDGET_MS
+  const [run] = (await db()`
+    insert into runs (started_at) values (now()) returning id`) as { id: number }[]
+
+  try {
+    const result = await runRound(deadline)
+    await db()`
+      update runs set finished_at = now(), ok = true, result = ${jsonb(result)}::jsonb
+       where id = ${run.id}`
+    return result
+  } catch (error) {
+    await db()`
+      update runs set finished_at = now(), ok = false, error = ${String(error)}
+       where id = ${run.id}`
+    throw error
+  }
+}
+
+async function runRound(deadline: number) {
   await ingestSearches()
 
   // Replies before anything else: a lead who answered must not get the email already

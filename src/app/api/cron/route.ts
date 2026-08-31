@@ -1,5 +1,5 @@
 import { after } from 'next/server'
-import { getSetting, setSetting } from '@/lib/db'
+import { db } from '@/lib/db'
 import { tick } from '@/lib/engine'
 
 export const maxDuration = 300
@@ -26,24 +26,30 @@ export async function GET(request: Request) {
     return new Response('Unauthorized', { status: 401 })
   }
 
-  const previous = await getSetting('last_round', '')
+  // tick() records every round in `runs`, so the last one is read from there rather than
+  // kept in a second place that could disagree with it.
+  const [last] = (await db()`
+    select started_at, ok, result, error from runs
+     where finished_at is not null order by started_at desc limit 1`) as {
+    started_at: string
+    ok: boolean
+    result: unknown
+    error: string | null
+  }[]
 
   after(async () => {
-    const at = new Date().toISOString()
     try {
-      const result = await tick()
-      await setSetting('last_round', JSON.stringify({ at, ...result }))
+      await tick()
     } catch (error) {
-      // The round is over either way. What matters is that the reason outlives it, since
-      // nobody is reading this response by the time it fails.
+      // Already recorded against the run row by tick(). Logged so it reaches the platform
+      // as well, since nobody is reading this response by the time a round fails.
       console.error('cron failed', error)
-      await setSetting('last_round', JSON.stringify({ at, error: String(error) }))
     }
   })
 
   return Response.json({
     ok: true,
     started: true,
-    previous: previous ? JSON.parse(previous) : null,
+    previous: last ? { at: last.started_at, ok: last.ok, ...(last.result ?? {}), error: last.error } : null,
   })
 }

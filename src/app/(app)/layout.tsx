@@ -16,6 +16,7 @@ const WORK = [
 
 /** Looked at occasionally, so kept out of the run of pages you move through. */
 const ASIDE = [
+  { href: '/runs', label: 'Runs' },
   { href: '/analytics', label: 'Analytics' },
   { href: '/settings', label: 'Settings' },
 ] as const
