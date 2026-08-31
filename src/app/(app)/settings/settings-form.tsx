@@ -27,7 +27,15 @@ export function SettingsForm({ senderName }: { senderName: string }) {
   )
 }
 
-export function SendingLimitsForm({ cap, cooldown }: { cap: number; cooldown: number }) {
+export function SendingLimitsForm({
+  cap,
+  cooldown,
+  spacing,
+}: {
+  cap: number
+  cooldown: number
+  spacing: number
+}) {
   const [state, action, pending] = useActionState(saveSendingLimits, {})
 
   return (
@@ -73,6 +81,29 @@ export function SendingLimitsForm({ cap, cooldown }: { cap: number; cooldown: nu
             defaultValue={cooldown}
           />
           <p className="text-muted-foreground text-xs">0 turns the guard off.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="send_spacing_seconds" className="flex items-center gap-1.5">
+            Seconds between emails
+            <Hint>
+              How long to wait after each email before sending the next. Mail servers refuse
+              a burst even when the daily total is fine, and every mailbox here leaves
+              through the same one. If the outbox keeps saying emails were held back, raise
+              this. Slower is always safe.
+            </Hint>
+          </Label>
+          <Input
+            id="send_spacing_seconds"
+            name="send_spacing_seconds"
+            type="number"
+            min={0}
+            max={120}
+            defaultValue={spacing}
+          />
+          <p className="text-muted-foreground text-xs">
+            At most about {spacing > 0 ? Math.floor(60 / spacing) : 60} a minute.
+          </p>
         </div>
       </div>
       {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}

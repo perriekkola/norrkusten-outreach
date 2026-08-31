@@ -2,7 +2,7 @@ import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { db, getSetting } from '@/lib/db'
-import { dailySendCap, leadCooldownDays } from '@/lib/engine'
+import { dailySendCap, leadCooldownDays, sendSpacingMs } from '@/lib/engine'
 import { Mailboxes, type MailboxRow } from './mailboxes'
 import { SendingLimitsForm, SettingsForm, UserForm } from './settings-form'
 import { Suppressions, type SuppressionRow } from './suppressions'
@@ -25,7 +25,12 @@ export const metadata = { title: 'Settings' }
 
 export default async function SettingsPage() {
   const senderName = await getSetting('sender_name')
-  const [cap, cooldown] = await Promise.all([dailySendCap(), leadCooldownDays()])
+  const [cap, cooldown, spacingMs] = await Promise.all([
+    dailySendCap(),
+    leadCooldownDays(),
+    sendSpacingMs(),
+  ])
+  const spacing = Math.round(spacingMs / 1000)
   const suppressions = (await db()`
     select email, reason, source, created_at from suppressions
      order by created_at desc limit 500`) as SuppressionRow[]
@@ -68,7 +73,7 @@ export default async function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SendingLimitsForm cap={cap} cooldown={cooldown} />
+          <SendingLimitsForm cap={cap} cooldown={cooldown} spacing={spacing} />
         </CardContent>
       </Card>
 

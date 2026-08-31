@@ -107,10 +107,14 @@ export async function saveSendingLimits(_prev: State, formData: FormData): Promi
   // starts climbing, and a typo of 400 in this box is a burnt sending domain.
   const cap = Math.max(1, Math.min(50, Number(formData.get('daily_send_cap')) || 40))
   const cooldown = Math.max(0, Math.min(30, Number(formData.get('lead_cooldown_days')) || 0))
+  // No upper bound worth enforcing: slower is always safe, and the ceiling belongs to
+  // whoever hosts the mailbox, not to us.
+  const spacing = Math.max(0, Math.min(120, Number(formData.get('send_spacing_seconds')) || 0))
   await setSetting('daily_send_cap', String(cap))
   await setSetting('lead_cooldown_days', String(cooldown))
+  await setSetting('send_spacing_seconds', String(spacing))
   refresh()
-  return { ok: `Saved — ${cap}/day per mailbox, ${Math.ceil(cap / 2)} per cron run.` }
+  return { ok: `Saved. ${cap} a day per mailbox, ${spacing}s between emails.` }
 }
 
 /* --------------------------------------------------------------- suppression */

@@ -552,18 +552,27 @@ export async function rewriteDrafts(
  * sit behind the drafting, and drafting is what runs out of time.
  */
 /**
- * Gap between sends.
+ * Seconds to wait between sends.
  *
- * The daily cap is per mailbox, but every mailbox here goes out through one provider on
- * one domain, so five mailboxes sending twenty each still looks like a single sender
- * firing a hundred emails a minute. That is what tripped the rate limit; the per-mailbox
- * cap never saw it because no single mailbox went over.
+ * The daily cap is per mailbox, but every mailbox here leaves through one provider on one
+ * domain, so five mailboxes sending twenty each looks like a single sender firing a
+ * hundred emails a minute. No individual mailbox went over its cap and the domain was
+ * throttled anyway.
+ *
+ * The default comes from measurement, not a guess: two runs 42 minutes apart each
+ * delivered exactly 25 before the provider answered 451, which puts its ceiling near 25
+ * per five minutes, or one every twelve seconds. It is a setting because that number
+ * belongs to whoever hosts the mailbox and will change if the mailbox moves.
  */
-const SEND_SPACING_MS = 2_000
+export const DEFAULT_SEND_SPACING_SECONDS = 10
+
+export const sendSpacingMs = async () =>
+  (Number(await getSetting('send_spacing_seconds', String(DEFAULT_SEND_SPACING_SECONDS))) ||
+    DEFAULT_SEND_SPACING_SECONDS) * 1000
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-export async function sendApproved(deadline = Date.now() + 120_000) {
+export async function sendApproved(deadline = Date.now() + 180_000) {
   // Highest-scoring leads go out first, so a partial run still hits the best ones — and
   // a pass that runs out of allowance has spent it on the best leads, not the first ones.
   const approved = (await db()`
@@ -580,6 +589,7 @@ export async function sendApproved(deadline = Date.now() + 120_000) {
   }[]
 
   const allowance = await sendAllowance()
+  const spacing = await sendSpacingMs()
   const left = new Map<number, number>()
   let sent = 0
   let held = 0
@@ -595,7 +605,7 @@ export async function sendApproved(deadline = Date.now() + 120_000) {
       held++
       continue
     }
-    if (sent > 0) await sleep(SEND_SPACING_MS)
+    if (sent > 0) await sleep(spacing)
     try {
       const outcome = await sendMessage(message.id)
       if (outcome === 'sent') {
@@ -643,7 +653,7 @@ export async function tick() {
   // work that takes minutes per campaign; with eight campaigns it used to consume the
   // whole invocation and the platform killed the function before a single approved email
   // left. Approved mail is the one thing here that must not be best-effort.
-  const { sent, held } = await sendApproved(Math.min(deadline, Date.now() + 120_000))
+  const { sent, held, throttled } = await sendApproved(Math.min(deadline, Date.now() + 180_000))
 
   // Least recently written to first, so the last campaign in the list is not starved
   // every round once drafting runs out of time. Campaigns that have never drafted lead.
@@ -665,5 +675,5 @@ export async function tick() {
     }
   }
 
-  return { replies, drafted, sent, held }
+  return { replies, drafted, sent, held, throttled }
 }
