@@ -1,19 +1,20 @@
 /**
  * What a run costs, before you press the button.
  *
- * Unit prices are published rates (checked 2026-08-20). Token counts per call are
+ * Unit prices are published rates (checked 2026-09-01). Token counts per call are
  * estimated from the prompts in ai.ts, so treat the totals as an order of magnitude,
  * not an invoice — they are here to stop a 100k-lead search being a surprise.
  *
- * ponytail: hand-estimated token counts. Every SDK response already carries `usage`;
- * if these drift, record it per call and average the last N instead of guessing.
+ * ponytail: hand-estimated token counts, and they do drift — the Sonnet rate here was a
+ * generation out of date, quoting scoring 50% over. Real per-call usage now lands in the
+ * `ai_usage` table (see ai.ts); correct the numbers below against it periodically.
  * Pure module — no imports, safe on the client.
  */
 
 /** USD per million tokens. platform.claude.com/docs — Claude API list prices. */
 const RATE = {
   'claude-opus-5': { in: 5, out: 25 },
-  'claude-sonnet-5': { in: 3, out: 15 },
+  'claude-sonnet-5': { in: 2, out: 10 },
   'claude-haiku-4-5': { in: 1, out: 5 },
 } as const
 
@@ -37,8 +38,8 @@ export const UNIT = {
   qualify: call('claude-sonnet-5', 900, 700),
   /** Haiku 4.5 with web search. Dominated by the pages it pulls back, not the writing. */
   research: call('claude-haiku-4-5', 45_000, 1_200, 3),
-  /** Opus 5: offer, guidelines, research and thread in; one email out. */
-  draft: call('claude-opus-5', 2_400, 1_600),
+  /** Sonnet 5: offer, guidelines, research and thread in; one email out. */
+  draft: call('claude-sonnet-5', 2_400, 1_600),
   /** Opus 5 reading the pages you paste, then writing every campaign field. Once. */
   campaign: call('claude-opus-5', 60_000, 6_000, 4) + 0.4,
 } as const
@@ -48,6 +49,13 @@ export const searchCost = (leads: number) => APIFY_RUN_START + leads * APIFY_PER
 /**
  * A campaign pass. Everything enrolled gets scored; only what clears the floor is
  * researched and written, and research is paid once per company for all time.
+ *
+ * Scoring looks like the obvious thing to cut and is the one thing here that must stay:
+ * it is the cheapest call in the pipeline and it is the gate on the two expensive ones,
+ * so it pays for itself the moment it rejects more than qualify/(research+draft) — about
+ * 9% — of a campaign's leads. Watch min_score. A campaign passing 99% of what it scores
+ * is buying a filter that does not filter, and that is the only case where the scoring
+ * spend is genuinely wasted.
  */
 export function campaignCost(counts: { toScore: number; toResearch: number; toDraft: number }) {
   return (

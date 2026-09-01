@@ -146,10 +146,28 @@ export async function draftForEnrollment(
 
   // Research is an input to writing, not a step of its own: fetch it the first time we
   // write to this company and reuse it for every later email and every other campaign.
+  //
+  // The brief is about the company, and a search returns roughly two people per company —
+  // so before paying for one, look for a colleague who already has it. Copying it onto
+  // this lead too keeps the `!lead.research` check above doing the work next time.
+  //
+  // ponytail: two leads at one company drafted in the same pass can both miss and both
+  // research. Costs one extra call, same as today; a lock is not worth it below thousands.
   if (!lead.research) {
     try {
-      report({ phase: 'Researching', detail: lead.company_name ?? lead.email })
-      lead.research = await researchCompany(lead)
+      const [sibling] = lead.company_domain
+        ? ((await db()`
+            select research from leads
+             where company_domain = ${lead.company_domain}
+               and research is not null and id <> ${lead.id}
+             limit 1`) as { research: string }[])
+        : []
+      if (sibling) {
+        lead.research = sibling.research
+      } else {
+        report({ phase: 'Researching', detail: lead.company_name ?? lead.email })
+        lead.research = await researchCompany(lead)
+      }
       await db()`update leads set research = ${lead.research} where id = ${lead.id}`
     } catch (error) {
       console.error('research failed, drafting without it', lead.id, error)

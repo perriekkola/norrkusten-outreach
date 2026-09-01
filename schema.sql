@@ -108,6 +108,10 @@ create table if not exists messages (
 
 create index if not exists idx_leads_status   on leads(status);
 create index if not exists idx_leads_search    on leads(search_id);
+-- The sibling-research lookup in engine.ts runs once per lead about to be researched.
+-- Partial: the only rows it ever wants are the ones that already have a brief.
+create index if not exists idx_leads_research_domain on leads(company_domain)
+  where research is not null;
 create index if not exists idx_enroll_due      on enrollments(status, next_send_at);
 create index if not exists idx_msg_status      on messages(status);
 create index if not exists idx_msg_provider    on messages(provider_id);
@@ -199,3 +203,21 @@ create table if not exists suppressions (
 -- so the send-rate ledger has to read what was used at the time, not what is set now.
 alter table messages add column if not exists mailbox_id int references mailboxes(id) on delete set null;
 create index if not exists idx_msg_sent_at on messages(mailbox_id, sent_at);
+
+-- What the model calls actually cost, as reported by the API rather than estimated.
+-- costs.ts quotes a run before you press the button from hand-counted tokens; this is
+-- the ground truth to correct those numbers against. Written fire-and-forget, so a
+-- failure here never costs a draft.
+create table if not exists ai_usage (
+  id                bigserial primary key,
+  op                text not null,   -- qualify | research | draft | campaign | search | reply
+  model             text not null,
+  input_tokens      int  not null,
+  cache_read_tokens int  not null default 0,
+  output_tokens     int  not null,
+  thinking_tokens   int  not null default 0,
+  web_searches      int  not null default 0,
+  web_fetches       int  not null default 0,
+  created_at        timestamptz not null default now()
+);
+create index if not exists idx_ai_usage_op on ai_usage(op, id desc);

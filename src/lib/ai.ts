@@ -12,18 +12,24 @@ import {
   matchLocations,
   type Option,
 } from './apify-options'
-import type { Campaign, Lead, WritingMode } from './db'
+import { db, type Campaign, type Lead, type WritingMode } from './db'
 import { decodeEscapes, looksMangled } from './format'
 
 /**
  * One model per task, overridable without a deploy. Research dominates the bill —
  * web search pulls tens of thousands of input tokens per lead — and it is summarising
- * fetched pages, so Haiku carries it. Drafting stays on Opus: that output is the reply rate.
+ * fetched pages, so Haiku carries it.
  */
 const MODEL = {
   qualify: process.env.CLAUDE_MODEL_QUALIFY || 'claude-sonnet-5',
   research: process.env.CLAUDE_MODEL_RESEARCH || 'claude-haiku-4-5',
-  draft: process.env.CLAUDE_MODEL_DRAFT || 'claude-opus-5',
+  /**
+   * Sonnet, not Opus. A 120-word email off a brief that is already written is not the
+   * hard part of this pipeline — the campaign wording and the research are, and those
+   * still run on Opus. Set CLAUDE_MODEL_DRAFT=claude-opus-5 to put it back and compare
+   * reply rates; drafting is 2.5x the price there, per email, forever.
+   */
+  draft: process.env.CLAUDE_MODEL_DRAFT || 'claude-sonnet-5',
   /** Once per campaign, and every later email depends on it — worth the best model. */
   campaign: process.env.CLAUDE_MODEL_CAMPAIGN || 'claude-opus-5',
   /** Reading a short reply and putting it in one of seven boxes. Cheap work. */
@@ -45,6 +51,35 @@ function anthropic() {
     client = new Anthropic({ maxRetries: 5 })
   }
   return client
+}
+
+/**
+ * What the call actually cost, as the API reports it.
+ *
+ * costs.ts quotes a run before you press the button from token counts somebody typed in
+ * by hand, and they drift — the Sonnet rate in there was a whole model generation out of
+ * date. This is the ground truth to correct them against:
+ *
+ *   select op, model, count(*), avg(input_tokens)::int, avg(output_tokens)::int,
+ *          avg(thinking_tokens)::int, avg(web_searches)::numeric(4,1)
+ *     from ai_usage group by op, model;
+ *
+ * Deliberately not awaited. A logging insert that fails must never take a draft with it,
+ * and nothing downstream reads this row.
+ *
+ * ponytail: write-only for now. Feed the averages back into costs.ts once there is a
+ * month of rows — that means making the estimates async, and costs.ts is a pure module
+ * on purpose so the client can import it.
+ */
+function record(op: string, model: string, usage: Anthropic.Usage) {
+  void db()`
+    insert into ai_usage (op, model, input_tokens, cache_read_tokens, output_tokens,
+                          thinking_tokens, web_searches, web_fetches)
+    values (${op}, ${model}, ${usage.input_tokens}, ${usage.cache_read_input_tokens ?? 0},
+            ${usage.output_tokens}, ${usage.output_tokens_details?.thinking_tokens ?? 0},
+            ${usage.server_tool_use?.web_search_requests ?? 0},
+            ${usage.server_tool_use?.web_fetch_requests ?? 0})
+  `.catch((error) => console.error('ai_usage insert failed', op, error))
 }
 
 function textOf(content: Anthropic.ContentBlock[]) {
@@ -142,6 +177,7 @@ export async function qualifyLead(lead: Lead, icp: string): Promise<Qualificatio
       },
     ],
   })
+  record('qualify', MODEL.qualify, message.usage)
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no qualification')
   const { reasons, angle, ...rest } = message.parsed_output
@@ -197,6 +233,7 @@ export async function classifyReply(reply: string, sentSubject: string): Promise
       },
     ],
   })
+  record('reply', MODEL.reply, message.usage)
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no reading of the reply')
   return {
@@ -232,11 +269,12 @@ export async function researchCompany(lead: Lead): Promise<string> {
       ...(isLegacy(MODEL.research) ? {} : { output_config: { effort: 'low' as const } }),
       tools: [
         isLegacy(MODEL.research)
-          ? { type: 'web_search_20250305' as const, name: 'web_search' as const, max_uses: 6 }
-          : { type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 6 },
+          ? { type: 'web_search_20250305' as const, name: 'web_search' as const, max_uses: 3 }
+          : { type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 3 },
       ],
       messages,
     })
+    record('research', MODEL.research, message.usage)
     guardRefusal(message)
     if (message.stop_reason !== 'pause_turn') return decodeEscapes(finalText(message.content))
     messages.push({ role: 'assistant', content: message.content })
@@ -340,6 +378,7 @@ export async function draftEmail(args: {
       },
     ],
   })
+  record('draft', MODEL.draft, message.usage)
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no draft')
   return {
@@ -471,6 +510,7 @@ async function readSources(brief: string, links: string[], report: Report): Prom
       ],
       messages,
     })
+    record('campaign', MODEL.campaign, message.usage)
     guardRefusal(message)
 
     // Say which page or query it actually reached for, not just that it is busy.
@@ -581,6 +621,7 @@ async function writeCampaign(
     system,
     messages: [{ role: 'user', content }],
   })
+  record('campaign', MODEL.campaign, message.usage)
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no campaign draft')
   const draft = message.parsed_output
@@ -829,6 +870,7 @@ export async function draftSearch(args: {
       },
     ],
   })
+  record('search', MODEL.campaign, message.usage)
   guardRefusal(message)
   if (!message.parsed_output) throw new Error('Claude returned no search filters')
   const draft = message.parsed_output
