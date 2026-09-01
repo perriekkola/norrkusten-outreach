@@ -50,6 +50,30 @@ const SELECT = `
     join enrollments e on e.id = m.enrollment_id
     join campaigns c on c.id = e.campaign_id`
 
+/**
+ * How many rows any one tab loads.
+ *
+ * These lists are filtered, searched and sorted in the browser, so the whole set has to be
+ * on the page. It was 100 for sent mail, which quietly hid everything older than the last
+ * hundred — the list looked complete and was not. High enough now that nothing realistic
+ * hits it, and when something does, {@link Truncated} says so rather than the list just
+ * stopping.
+ *
+ * ponytail: whole list in the browser; page it server-side when this cap is reached in
+ * practice rather than in theory.
+ */
+const LIST_LIMIT = 1000
+
+/** Says the quiet part out loud on the day a list stops being all of it. */
+function Truncated({ shown, total }: { shown: number; total: number }) {
+  if (shown >= total) return null
+  return (
+    <p className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-relaxed">
+      Showing the {shown} most recent of {total}. The older ones are not on this page.
+    </p>
+  )
+}
+
 export const metadata = { title: 'Outbox' }
 
 function Schedule({
@@ -159,7 +183,7 @@ export default async function OutboxPage() {
     // Same order the sender uses, so the queue reads as the order it will go out —
     // and a rewritten draft keeps its place instead of jumping to the bottom.
     `${SELECT} where m.status in ('draft','approved')
-      order by e.score desc nulls last, m.step, m.id limit 200`,
+      order by e.score desc nulls last, m.step, m.id limit ${LIST_LIMIT}`,
   )) as OutboxRow[]
 
   // Only worth saying while it is actually happening. A refused message keeps its error
@@ -170,6 +194,20 @@ export default async function OutboxPage() {
   const [heldBack] = (await db()`
     select count(*)::int as n from messages
      where status = 'approved' and error is not null`) as { n: number }[]
+
+  // Counted in the database, not from the arrays above. A badge built from a capped list
+  // reports the cap, which is how 230 sent emails read as 100.
+  const [totals] = (await db()`
+    select count(*) filter (where status in ('draft','approved'))::int as pending,
+           count(*) filter (where status = 'sent')::int as delivered,
+           count(*) filter (where status in ('sent','failed'))::int as sent_or_failed,
+           count(*) filter (where replied_at is not null)::int as replies
+      from messages`) as {
+    pending: number
+    delivered: number
+    sent_or_failed: number
+    replies: number
+  }[]
 
   const testEmail = await getSetting('test_email')
   const [cap, cooldown, rounds] = await Promise.all([
@@ -189,13 +227,13 @@ export default async function OutboxPage() {
   const signatureFor = Object.fromEntries(signatures.map((r) => [r.campaign_id, r.signature]))
 
   const sent = (await db().query(
-    `${SELECT} where m.status in ('sent','failed') order by m.sent_at desc nulls last limit 100`,
+    `${SELECT} where m.status in ('sent','failed') order by m.sent_at desc nulls last limit ${LIST_LIMIT}`,
   )) as OutboxRow[]
 
   // Replies are the whole output of this thing, so they get their own list rather than
   // being a badge somewhere in a hundred rows of sent mail.
   const replies = (await db().query(
-    `${SELECT} where m.replied_at is not null order by m.replied_at desc limit 200`,
+    `${SELECT} where m.replied_at is not null order by m.replied_at desc limit ${LIST_LIMIT}`,
   )) as OutboxRow[]
 
   return (
@@ -221,16 +259,15 @@ export default async function OutboxPage() {
 
       <UrlTabs defaultValue="pending">
         <TabsList>
-          <TabsTrigger value="pending">Waiting ({pending.length})</TabsTrigger>
-          <TabsTrigger value="replies">Replies ({replies.length})</TabsTrigger>
+          <TabsTrigger value="pending">Waiting ({totals.pending})</TabsTrigger>
+          <TabsTrigger value="replies">Replies ({totals.replies})</TabsTrigger>
           {/* Delivered mail only. A sent count that includes rejections is the opposite of
               what it is for; the failures are a filter inside the tab. */}
-          <TabsTrigger value="sent">
-            Sent ({sent.filter((m) => m.status === 'sent').length})
-          </TabsTrigger>
+          <TabsTrigger value="sent">Sent ({totals.delivered})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="mt-4">
+          <Truncated shown={pending.length} total={totals.pending} />
           {pending.length === 0 ? (
             <Card>
               <CardContent className="text-muted-foreground py-10 text-center text-sm">
@@ -247,10 +284,12 @@ export default async function OutboxPage() {
         </TabsContent>
 
         <TabsContent value="replies" className="mt-4">
+          <Truncated shown={replies.length} total={totals.replies} />
           <RepliesTable replies={replies} />
         </TabsContent>
 
         <TabsContent value="sent" className="mt-4">
+          <Truncated shown={sent.length} total={totals.sent_or_failed} />
           {sent.length === 0 ? (
             <Card>
               <CardContent className="text-muted-foreground py-10 text-center text-sm">
