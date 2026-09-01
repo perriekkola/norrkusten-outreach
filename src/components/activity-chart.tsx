@@ -23,6 +23,8 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
 
   const ticks = [0, Math.round(max / 2), max]
   const label = (day: string) => day.slice(5).replace('-', '/')
+  // A dot per day, until the days are packed tighter than a dot is wide.
+  const dots = plotW / Math.max(1, data.length - 1) >= 8
 
   return (
     <figure className="m-0">
@@ -63,6 +65,19 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
           return (
             <g key={series.key}>
               <path d={path} fill="none" stroke={series.color} strokeWidth={2} strokeLinejoin="round" />
+              {dots
+                ? data.map((point, i) => (
+                    <circle
+                      key={point.day}
+                      cx={x(i)}
+                      cy={y(point[series.key])}
+                      r={2.5}
+                      fill="var(--card)"
+                      stroke={series.color}
+                      strokeWidth={2}
+                    />
+                  ))
+                : null}
               <text
                 x={W - PAD.right + 6}
                 y={y(last) + 4}

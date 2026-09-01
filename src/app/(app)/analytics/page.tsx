@@ -1,16 +1,9 @@
 import { ActivityChart, type ActivityPoint } from '@/components/activity-chart'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { db } from '@/lib/db'
 import { AnalyticsFilters } from './analytics-filters'
+import { CampaignsTable } from './campaigns-table'
 
 type Funnel = {
   leads: number
@@ -23,7 +16,7 @@ type Funnel = {
   bounced: number
 }
 
-type CampaignRow = {
+export type CampaignRow = {
   id: number
   name: string
   enrolled: number
@@ -181,46 +174,12 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
         </Card>
       </div>
 
-      <Card className="mt-6 pb-0">
-        <CardHeader>
-          <CardTitle className="text-base">By campaign</CardTitle>
-        </CardHeader>
+      <Card className="mt-6 py-0">
         <CardContent className="p-0">
           {campaigns.length === 0 ? (
-            <p className="text-muted-foreground p-6 pt-0 text-sm">No campaigns yet.</p>
+            <p className="text-muted-foreground p-6 text-sm">No campaigns yet.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Campaign</TableHead>
-                  <TableHead className="text-right">Enrolled</TableHead>
-                  <TableHead className="text-right">Sent</TableHead>
-                  <TableHead className="text-right">Opened</TableHead>
-                  <TableHead className="text-right">Replied</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaigns.map((campaign) => (
-                  <TableRow key={campaign.id}>
-                    <TableCell className="font-medium">{campaign.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">{campaign.enrolled}</TableCell>
-                    <TableCell className="text-right tabular-nums">{campaign.sent}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {campaign.opened}{' '}
-                      <span className="text-muted-foreground text-xs">
-                        {percent(campaign.opened, campaign.sent)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {campaign.replied}{' '}
-                      <span className="text-muted-foreground text-xs">
-                        {percent(campaign.replied, campaign.sent)}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <CampaignsTable campaigns={campaigns} />
           )}
         </CardContent>
       </Card>
