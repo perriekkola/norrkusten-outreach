@@ -109,6 +109,48 @@ export function isAutoReply(rawHeaders: string, subject = ''): boolean {
   return AUTO_SUBJECT.test(subject)
 }
 
+/** As much of an IMAP BODYSTRUCTURE node as choosing a part needs. */
+type BodyNode = {
+  type?: string
+  part?: string
+  disposition?: string
+  childNodes?: BodyNode[]
+}
+
+/**
+ * Which body part holds what the person wrote.
+ *
+ * Naming the part is what lets the transfer encoding be decoded. Asking IMAP for
+ * BODY[TEXT] returns the body in whatever encoding the sender chose — quoted-printable
+ * from Outlook, base64 from Gmail — and reading those bytes as UTF-8 renders "Tack för
+ * tipset" as "Tack f=F6r tipset", which is also what the classifier then reads. Fetching
+ * one named part instead means imapflow decodes it and converts the charset on the way in.
+ *
+ * text/plain wins over text/html, since it needs no tag stripping. Attachments are skipped
+ * before their children are looked at: a forwarded .eml is not the reply to it.
+ */
+export function textPartPath(node?: BodyNode): string | undefined {
+  let plain: string | undefined
+  let html: string | undefined
+
+  const visit = (current: BodyNode) => {
+    if (current.disposition?.toLowerCase() === 'attachment') return
+    if (current.childNodes?.length) {
+      for (const child of current.childNodes) visit(child)
+      return
+    }
+    // A single-part message has no part number of its own, and '1' is what download()
+    // wants for one: it looks the message up and asks for BODY[TEXT] instead.
+    const part = current.part ?? '1'
+    const type = current.type?.toLowerCase()
+    if (type === 'text/plain') plain ??= part
+    else if (type === 'text/html') html ??= part
+  }
+
+  if (node) visit(node)
+  return plain ?? html
+}
+
 /**
  * The part of a reply the person actually wrote.
  *

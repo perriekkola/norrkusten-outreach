@@ -128,6 +128,60 @@ assert.equal(
 )
 assert.ok(replyText('a'.repeat(9000)).length < 4100, 'long replies are cut')
 
+// Picking the part is what gets the reply decoded. Asking for BODY[TEXT] instead printed a
+// real Outlook reply as "Tack f=F6r tipset" and handed the classifier the same, so this
+// asserts the shape Outlook and Gmail actually send: an alternative pair, sometimes with
+// the whole thing wrapped in multipart/mixed because a signature image rides along.
+const { textPartPath } = await import('../src/lib/format.ts')
+assert.equal(textPartPath({ type: 'text/plain' }), '1', 'a single-part mail is part 1')
+assert.equal(
+  textPartPath({
+    type: 'multipart/alternative',
+    childNodes: [
+      { part: '1', type: 'text/plain' },
+      { part: '2', type: 'text/html' },
+    ],
+  }),
+  '1',
+  'text/plain beats text/html',
+)
+assert.equal(
+  textPartPath({
+    type: 'multipart/mixed',
+    childNodes: [
+      {
+        type: 'multipart/alternative',
+        childNodes: [
+          { part: '1.1', type: 'text/html' },
+          { part: '1.2', type: 'text/plain' },
+        ],
+      },
+      { part: '2', type: 'image/png', disposition: 'inline' },
+    ],
+  }),
+  '1.2',
+  'the nested text part is found',
+)
+// A forwarded .eml carries text parts of its own, and answering those means classifying
+// somebody else's mail as this person's reply.
+assert.equal(
+  textPartPath({
+    type: 'multipart/mixed',
+    childNodes: [
+      { part: '1', type: 'text/html' },
+      {
+        part: '2',
+        type: 'message/rfc822',
+        disposition: 'attachment',
+        childNodes: [{ part: '2.1', type: 'text/plain' }],
+      },
+    ],
+  }),
+  '1',
+  'an attached message is not the reply',
+)
+assert.equal(textPartPath(undefined), undefined, 'no structure, no part')
+
 
 // Every one of these arrives with the original References attached, so without telling
 // them apart they all count as a reply: the sequence stops and the reply rate reads high.

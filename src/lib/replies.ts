@@ -1,7 +1,7 @@
 import 'server-only'
 import { ImapFlow } from 'imapflow'
 import { db, type Mailbox } from './db'
-import { isAutoReply, isBounce, referencedIds, replyText } from './format'
+import { isAutoReply, isBounce, referencedIds, replyText, textPartPath } from './format'
 import { classifyReply } from './ai'
 import { suppress } from './suppression'
 import { decrypt } from './secrets'
@@ -66,6 +66,31 @@ export async function checkReplies(
   return { replied, auto, bounced, optedOut }
 }
 
+/**
+ * One body part, decoded.
+ *
+ * download() is what does the work: it reads that part's own Content-Transfer-Encoding and
+ * Content-Type, undoes quoted-printable or base64, and converts the charset to UTF-8. The
+ * cap keeps a reply with a megabyte of inline signature image from being read into memory
+ * whole — replyText keeps 4 kB of it either way.
+ */
+async function bodyText(client: ImapFlow, uid: number, part?: string): Promise<string> {
+  try {
+    const { content } = await client.download(String(uid), part ?? '1', {
+      uid: true,
+      maxBytes: 256 * 1024,
+    })
+    if (!content) return ''
+    const chunks: Buffer[] = []
+    for await (const chunk of content) chunks.push(chunk as Buffer)
+    return Buffer.concat(chunks).toString('utf8')
+  } catch (error) {
+    // A body that will not download is still a reply. Never lose the match over it.
+    console.error('could not download reply body', uid, error)
+    return ''
+  }
+}
+
 async function pollMailbox(
   account: { host: string; port: number; user: string; pass: string },
   days: number,
@@ -86,12 +111,17 @@ async function pollMailbox(
   const lock = await client.getMailboxLock('INBOX')
   try {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-    for await (const mail of client.fetch(
+    // fetchAll rather than the streaming iterator, because the body of a matched reply is
+    // downloaded below and a second command issued while a fetch is still streaming waits
+    // on a connection that is waiting on this loop.
+    const mails = await client.fetchAll(
       { since },
       {
+        uid: true,
         envelope: true,
-        // The body too, so a reply can be read and acted on rather than only counted.
-        bodyParts: ['text'],
+        // Names the part holding the text, so the body can be fetched decoded rather than
+        // in the sender's transfer encoding. The body itself is pulled per matched reply.
+        bodyStructure: true,
         // Everything isAutoReply looks at, fetched in the same pass.
         headers: [
           'references',
@@ -104,7 +134,8 @@ async function pollMailbox(
           'x-failed-recipients',
         ],
       },
-    )) {
+    )
+    for (const mail of mails) {
       const raw = mail.headers?.toString('utf8') ?? ''
       const ids = [mail.envelope?.inReplyTo, ...referencedIds(raw)].filter(
         (value): value is string => Boolean(value),
@@ -156,6 +187,12 @@ async function pollMailbox(
         continue
       }
 
+      // Once per mail rather than once per matched row, and never for a bounce — that one
+      // is judged from its headers and its body is a delivery report nobody reads.
+      const text = bounce
+        ? ''
+        : replyText(await bodyText(client, mail.uid, textPartPath(mail.bodyStructure)))
+
       for (const row of rows) {
         if (bounce) {
           // Not marked replied: it was never delivered, so counting it as engagement
@@ -185,10 +222,6 @@ async function pollMailbox(
           bounced++
           continue
         }
-
-        const text = replyText(
-          (mail.bodyParts?.get('text') ?? mail.bodyParts?.get('TEXT'))?.toString('utf8') ?? '',
-        )
 
         await db()`
           update messages set replied_at = coalesce(replied_at, now()), reply_text = ${text}
