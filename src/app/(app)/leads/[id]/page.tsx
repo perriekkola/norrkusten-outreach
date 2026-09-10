@@ -14,6 +14,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { markEnrollmentReplied, unenroll } from '@/lib/actions'
 import { db, type Lead, type Message } from '@/lib/db'
+import { money } from '@/lib/format'
 
 type Enrollment = {
   id: number
@@ -27,6 +28,25 @@ type Enrollment = {
   campaign_id: number
   campaign_name: string
 }
+
+type Purchase = {
+  purchase_id: string
+  purchased_at: string
+  course_title: string | null
+  course_code: string | null
+  org_name: string | null
+  quantity: number
+  total_excl_vat: string | null
+  currency: string
+  matched_on: 'email' | 'domain' | 'company'
+}
+
+/** Why this purchase is on this lead's page. A domain or company match is an inference. */
+const WHY = {
+  email: 'Bought from this exact address.',
+  domain: 'Bought from the same email domain — a colleague, not necessarily this person.',
+  company: 'Matched on company name, from a different email domain.',
+} as const
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -57,6 +77,12 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
 
   const messages = (await db()`
     select * from messages where lead_id = ${lead.id} order by created_at`) as Message[]
+
+  const purchases = (await db()`
+    select purchase_id, purchased_at, course_title, course_code, org_name, quantity,
+           total_excl_vat, currency, matched_on
+      from conversions where lead_id = ${lead.id}
+     order by purchased_at desc`) as Purchase[]
 
   return (
     <>
@@ -132,6 +158,45 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
                         </p>
                       </>
                     ) : null}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {purchases.length ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Purchases</CardTitle>
+                <CardDescription>
+                  From the LMS, credited to this lead because the buyer matched and the
+                  purchase landed after the first email.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {purchases.map((purchase) => (
+                  <div key={purchase.purchase_id} className="space-y-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-sm font-medium">
+                        {purchase.course_title || purchase.course_code || 'Course'}
+                      </span>
+                      <span className="text-sm tabular-nums">
+                        {purchase.total_excl_vat
+                          ? money(Number(purchase.total_excl_vat), purchase.currency)
+                          : '—'}
+                      </span>
+                    </div>
+                    <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+                      <span className="tabular-nums">
+                        {new Date(purchase.purchased_at).toLocaleDateString('sv-SE')}
+                      </span>
+                      {purchase.quantity > 1 ? <span>{purchase.quantity} licenses</span> : null}
+                      {purchase.org_name ? <span>{purchase.org_name}</span> : null}
+                      <Badge variant={purchase.matched_on === 'email' ? 'default' : 'secondary'}>
+                        {purchase.matched_on} match
+                      </Badge>
+                    </div>
+                    <p className="text-muted-foreground text-xs">{WHY[purchase.matched_on]}</p>
                   </div>
                 ))}
               </CardContent>

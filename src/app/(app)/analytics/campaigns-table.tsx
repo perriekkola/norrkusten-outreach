@@ -3,10 +3,11 @@
 import { useState } from 'react'
 import { SortHeader } from '@/components/sortable'
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table'
+import { money } from '@/lib/format'
 import { sortRows, type Sort } from '@/lib/sort'
 import type { CampaignRow } from './page'
 
-type SortKey = 'name' | 'enrolled' | 'sent' | 'opened' | 'replied'
+type SortKey = 'name' | 'enrolled' | 'sent' | 'opened' | 'replied' | 'bought' | 'revenue'
 
 const percent = (part: number, whole: number) =>
   whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—'
@@ -15,7 +16,7 @@ const percent = (part: number, whole: number) =>
 const sortValue = (row: CampaignRow, key: SortKey): string | number =>
   key === 'name'
     ? row.name
-    : key === 'opened' || key === 'replied'
+    : key === 'opened' || key === 'replied' || key === 'bought'
       ? row.sent > 0
         ? row[key] / row.sent
         : -1
@@ -59,6 +60,20 @@ export function CampaignsTable({ campaigns }: { campaigns: CampaignRow[] }) {
             onSort={setSort}
             className="text-right"
           />
+          <SortHeader
+            label="Bought"
+            sortKey="bought"
+            sort={sort}
+            onSort={setSort}
+            className="text-right"
+          />
+          <SortHeader
+            label="Revenue"
+            sortKey="revenue"
+            sort={sort}
+            onSort={setSort}
+            className="text-right"
+          />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -78,6 +93,15 @@ export function CampaignsTable({ campaigns }: { campaigns: CampaignRow[] }) {
               <span className="text-muted-foreground text-xs">
                 {percent(row.replied, row.sent)}
               </span>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {row.bought}{' '}
+              <span className="text-muted-foreground text-xs">
+                {percent(row.bought, row.sent)}
+              </span>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {row.revenue > 0 ? money(row.revenue) : '—'}
             </TableCell>
           </TableRow>
         ))}

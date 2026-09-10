@@ -7,7 +7,7 @@ import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { addUser, saveSendingLimits, saveSettings } from '@/lib/actions'
+import { addUser, saveAttribution, saveSendingLimits, saveSettings } from '@/lib/actions'
 
 export function SettingsForm({ senderName }: { senderName: string }) {
   const [state, action, pending] = useActionState(saveSettings, {})
@@ -131,6 +131,40 @@ export function SendingLimitsForm({
             About {Math.ceil(cap / Math.max(1, rounds))} per mailbox each round.
           </p>
         </div>
+      </div>
+      {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
+      <Button type="submit" disabled={pending}>
+        {pending ? <Spinner /> : null}
+        {pending ? 'Saving…' : 'Save'}
+      </Button>
+    </form>
+  )
+}
+
+export function AttributionForm({ days }: { days: number }) {
+  const [state, action, pending] = useActionState(saveAttribution, {})
+
+  return (
+    <form action={action} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="attribution_window_days" className="flex items-center gap-1.5">
+          Attribution window, days
+          <Hint>
+            How long after the first email a purchase still counts as caused by it. Company
+            training gets bought after a procurement cycle rather than the same week, so 90
+            days is the default. Shorten it to be strict about causation; lengthen it if
+            deals in your market genuinely take longer. Changing this re-reads every
+            purchase, so the numbers on Analytics move immediately.
+          </Hint>
+        </Label>
+        <Input
+          id="attribution_window_days"
+          name="attribution_window_days"
+          type="number"
+          min={1}
+          max={730}
+          defaultValue={days}
+        />
       </div>
       {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
       <Button type="submit" disabled={pending}>

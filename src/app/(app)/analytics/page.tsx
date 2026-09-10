@@ -2,6 +2,7 @@ import { ActivityChart, type ActivityPoint } from '@/components/activity-chart'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { db } from '@/lib/db'
+import { money } from '@/lib/format'
 import { AnalyticsFilters } from './analytics-filters'
 import { CampaignsTable } from './campaigns-table'
 
@@ -14,6 +15,8 @@ type Funnel = {
   clicked: number
   replied: number
   bounced: number
+  bought: number
+  revenue: number
 }
 
 export type CampaignRow = {
@@ -23,6 +26,8 @@ export type CampaignRow = {
   sent: number
   opened: number
   replied: number
+  bought: number
+  revenue: number
 }
 
 const percent = (part: number, whole: number) =>
@@ -51,6 +56,15 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
     pool as (
       select e.* from enrollments e
        where (${campaign}::int is null or e.campaign_id = ${campaign}::int)
+    ),
+    -- Filtered on when the purchase happened, not on when the email went out: the
+    -- question this answers is what a period earned, and a sale in March from a February
+    -- email belongs to March.
+    bought as (
+      select cv.* from conversions cv
+       where (${campaign}::int is null or cv.campaign_id = ${campaign}::int)
+         and (${fromDate}::date is null or cv.purchased_at >= ${fromDate}::date)
+         and (${untilDate}::date is null or cv.purchased_at < ${untilDate}::date)
     )
     select
       (select count(distinct lead_id) from pool)::int                                  as leads,
@@ -60,7 +74,9 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
       (select count(*) from scoped where opened_at is not null)::int                   as opened,
       (select count(*) from scoped where clicked_at is not null)::int                  as clicked,
       (select count(*) from scoped where replied_at is not null)::int                  as replied,
-      (select count(*) from pool where status = 'bounced')::int                        as bounced
+      (select count(*) from pool where status = 'bounced')::int                        as bounced,
+      (select count(*) from bought)::int                                              as bought,
+      (select coalesce(sum(total_excl_vat), 0) from bought)::float                     as revenue
   `) as Funnel[]
 
   const activity = (await db()`
@@ -89,7 +105,10 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
            (select count(*) from messages m join enrollments e on e.id = m.enrollment_id
              where e.campaign_id = c.id and m.opened_at is not null)::int       as opened,
            (select count(*) from messages m join enrollments e on e.id = m.enrollment_id
-             where e.campaign_id = c.id and m.replied_at is not null)::int      as replied
+             where e.campaign_id = c.id and m.replied_at is not null)::int      as replied,
+           (select count(*) from conversions cv where cv.campaign_id = c.id)::int as bought,
+           (select coalesce(sum(cv.total_excl_vat), 0) from conversions cv
+             where cv.campaign_id = c.id)::float                                as revenue
       from campaigns c
      where (${campaign}::int is null or c.id = ${campaign}::int)
      order by c.created_at desc`) as CampaignRow[]
@@ -98,13 +117,20 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
     select id, name from campaigns order by created_at desc`) as { id: number; name: string }[]
 
   const STAGES = [
-    { label: campaign ? 'Enrolled' : 'Leads', value: funnel.leads, rate: null },
-    { label: 'Qualified', value: funnel.qualified, rate: percent(funnel.qualified, funnel.leads) },
-    { label: 'Enrolled', value: funnel.enrolled, rate: percent(funnel.enrolled, funnel.qualified) },
-    { label: 'Emails sent', value: funnel.sent, rate: null },
-    { label: 'Opened', value: funnel.opened, rate: percent(funnel.opened, funnel.sent) },
-    { label: 'Clicked', value: funnel.clicked, rate: percent(funnel.clicked, funnel.sent) },
-    { label: 'Replied', value: funnel.replied, rate: percent(funnel.replied, funnel.sent) },
+    { label: campaign ? 'Enrolled' : 'Leads', value: funnel.leads, rate: null, of: '' },
+    { label: 'Qualified', value: funnel.qualified, rate: percent(funnel.qualified, funnel.leads), of: 'of leads' },
+    { label: 'Enrolled', value: funnel.enrolled, rate: percent(funnel.enrolled, funnel.qualified), of: 'of qualified' },
+    { label: 'Emails sent', value: funnel.sent, rate: null, of: '' },
+    { label: 'Opened', value: funnel.opened, rate: percent(funnel.opened, funnel.sent), of: 'of sent' },
+    { label: 'Clicked', value: funnel.clicked, rate: percent(funnel.clicked, funnel.sent), of: 'of sent' },
+    { label: 'Replied', value: funnel.replied, rate: percent(funnel.replied, funnel.sent), of: 'of sent' },
+    {
+      label: 'Bought',
+      value: funnel.bought,
+      rate: percent(funnel.bought, funnel.sent),
+      of: 'of sent',
+      sub: funnel.revenue > 0 ? `${money(funnel.revenue)} excl. VAT` : null,
+    },
   ]
 
   return (
@@ -113,7 +139,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
 
       <AnalyticsFilters campaign={campaign} from={from} to={to} campaigns={allCampaigns} />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-8">
         {STAGES.map((stage) => (
           <Card key={stage.label}>
             <CardContent className="py-4">
@@ -123,8 +149,11 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
               <div className="mt-1 text-2xl font-semibold tabular-nums">{stage.value}</div>
               {stage.rate ? (
                 <div className="text-muted-foreground text-xs tabular-nums">
-                  {stage.rate} of previous
+                  {stage.rate} {stage.of}
                 </div>
+              ) : null}
+              {'sub' in stage && stage.sub ? (
+                <div className="text-muted-foreground text-xs tabular-nums">{stage.sub}</div>
               ) : null}
             </CardContent>
           </Card>
@@ -163,6 +192,15 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
               <strong className="text-foreground">Replies</strong> are matched by reading the inbox on the
               actual mail headers, so they are exact — and a reply stops that lead&apos;s sequence
               automatically.
+            </p>
+            <p>
+              <strong className="text-foreground">Purchases</strong> come from the LMS and are
+              credited to a lead when the buyer&apos;s address matches theirs, or the company
+              does, and the purchase lands inside the attribution window after the first
+              email. Company matches are an inference: someone at the same firm bought, not
+              necessarily the person mailed. Credit goes to whichever campaign emailed them
+              last, and each purchase is counted once even when several colleagues were
+              contacted.
             </p>
             <p>
               <strong className="text-foreground">Bounces</strong> arrive as an ordinary

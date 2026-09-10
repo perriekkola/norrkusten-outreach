@@ -330,3 +330,15 @@ export function textToHtml(
     : ''
   return `<div lang="${lang}" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#111">${paragraphs}${footerHtml ?? ''}${pixel}</div>`
 }
+
+/**
+ * Money for the screen. No decimals: these are course prices in whole kronor, and a
+ * revenue total to the öre reads as false precision when the amount behind it is a sum
+ * of list prices with an org discount applied somewhere upstream.
+ */
+export const money = (amount: number, currency = 'SEK') =>
+  new Intl.NumberFormat('sv-SE', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)

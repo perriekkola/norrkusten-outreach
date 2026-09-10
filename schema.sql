@@ -258,3 +258,110 @@ drop index if exists idx_leads_search;
 update searches s
    set imported = (select count(*) from lead_searches ls where ls.search_id = s.id)
  where imported <> (select count(*) from lead_searches ls where ls.search_id = s.id);
+-- Purchases mirrored from the LMS, so a sale can be tied back to the outreach that caused
+-- it. A local copy rather than a live call per page: attribution is a join against leads
+-- and messages, which has to happen in SQL, and the whole history is small enough to
+-- mirror. `id` is the LMS's own id, so a re-sync updates rather than duplicates.
+create table if not exists purchases (
+  id             text primary key,
+  purchased_at   timestamptz not null,
+  org_name       text,
+  org_number     text,
+  course_code    text,
+  course_title   text,
+  -- Every address on the purchase — buyer, org contact, billing, participants — lowercased.
+  -- The buyer is usually not the person we mailed, so matching on participants alone would
+  -- miss most company purchases.
+  emails         text[] not null default '{}',
+  -- Derived from `emails` on the way in rather than asked of the API, since this is the
+  -- column the domain match actually reads.
+  domains        text[] not null default '{}',
+  quantity       int not null default 1,
+  total_excl_vat numeric(12,2),
+  currency       text not null default 'SEK',
+  payment_method text,
+  source         text,
+  raw            jsonb not null default '{}'::jsonb,
+  synced_at      timestamptz not null default now()
+);
+create index if not exists idx_purchases_at      on purchases(purchased_at desc);
+create index if not exists idx_purchases_emails  on purchases using gin (emails);
+create index if not exists idx_purchases_domains on purchases using gin (domains);
+
+-- Attribution. One row per purchase that can be credited to a lead we emailed, so every
+-- count downstream is a plain count and revenue cannot be double-counted: a purchase at a
+-- company where two people were mailed still resolves to a single row.
+--
+-- Dropped and recreated rather than `create or replace`, which refuses a changed column
+-- list and would break `npm run db:push` on the next edit here.
+drop view if exists conversions;
+create view conversions as
+with win as (
+  select coalesce((select nullif(value, '')::int from settings
+                    where key = 'attribution_window_days'), 90) as days
+),
+touched as (
+  -- Every lead actually emailed. The window opens at the first send; the credit goes to
+  -- whichever campaign spoke to them most recently, which is the one that closed it.
+  select m.lead_id,
+         min(m.sent_at) as first_sent_at,
+         (array_agg(e.campaign_id order by m.sent_at desc))[1] as campaign_id
+    from messages m join enrollments e on e.id = m.enrollment_id
+   where m.sent_at is not null
+   group by m.lead_id
+),
+lead_keys as (
+  -- The lead's company reduced to something comparable. Legal forms go first, so
+  -- "St1 Sverige AB" and "St1 Sverige" agree, then everything that is not a letter or
+  -- digit, so punctuation and spacing stop mattering.
+  select l.id, l.email, l.company_name,
+         lower(regexp_replace(
+           coalesce(nullif(l.company_domain, ''), split_part(l.email, '@', 2)),
+           '^www\.', '')) as domain,
+         regexp_replace(regexp_replace(lower(coalesce(l.company_name, '')),
+           '\m(ab|aktiebolag|publ|hb|kb|oy|as)\M', '', 'g'),
+           '[^a-z0-9]', '', 'g') as company
+    from leads l
+),
+purchase_keys as (
+  select p.*, regexp_replace(regexp_replace(lower(coalesce(p.org_name, '')),
+           '\m(ab|aktiebolag|publ|hb|kb|oy|as)\M', '', 'g'),
+           '[^a-z0-9]', '', 'g') as company
+    from purchases p
+)
+select distinct on (p.id)
+       p.id as purchase_id,
+       t.lead_id,
+       t.campaign_id,
+       t.first_sent_at,
+       p.purchased_at,
+       p.course_code,
+       p.course_title,
+       p.org_name,
+       p.quantity,
+       p.total_excl_vat,
+       p.currency,
+       case when k.email = any(p.emails)                          then 'email'
+            when k.domain <> '' and k.domain = any(p.domains)      then 'domain'
+            else 'company' end as matched_on
+  from purchase_keys p
+  join touched t on true
+  join lead_keys k on k.id = t.lead_id
+ cross join win w
+ where p.purchased_at >= t.first_sent_at
+   and p.purchased_at < t.first_sent_at + (w.days || ' days')::interval
+   and (
+        k.email = any(p.emails)
+     or (k.domain <> '' and k.domain = any(p.domains))
+        -- Name matching is the fallback for a buyer whose address is on another domain
+        -- than the one we mailed (@st1.se paying for a lead at @st1.com). Four characters
+        -- minimum: shorter keys are initials and match half the register.
+     or (length(k.company) >= 4 and k.company = p.company)
+   )
+ -- Strongest evidence first, then the earliest lead reached, so the credited lead is
+ -- stable between runs instead of flipping between two colleagues at one company.
+ order by p.id,
+          case when k.email = any(p.emails) then 0
+               when k.domain <> '' and k.domain = any(p.domains) then 1
+               else 2 end,
+          t.first_sent_at;

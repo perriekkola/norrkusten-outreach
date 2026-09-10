@@ -4,6 +4,7 @@ import { describeApiError, draftEmailChecked, qualifyLead, researchCompany } fro
 import { db, getSetting, setSetting, jsonb, type Campaign, type Lead, type Message } from './db'
 import { sendEmail } from './email'
 import { fillTemplate, normalizeEmail } from './format'
+import { syncPurchases } from './lms'
 import { checkReplies } from './replies'
 import { LEAD_IS_SUPPRESSED, suppressedAmong } from './suppression'
 
@@ -732,6 +733,14 @@ export async function tick() {
 async function runRound(deadline: number) {
   await ingestSearches()
 
+  // Purchases before the rest: one HTTP call, and it is the only signal here that says
+  // the outreach worked. Best-effort on purpose — the LMS being down must not cost a
+  // round of sending.
+  const purchases = await syncPurchases().catch((error) => {
+    console.error('purchase sync failed', error)
+    return { synced: 0, skipped: 0, error: String(error) }
+  })
+
   // Replies before anything else: a lead who answered must not get the email already
   // sitting approved for them, and must not have another one drafted either.
   const { replied, auto, bounced, optedOut } = await checkReplies().catch((error) => {
@@ -770,5 +779,16 @@ async function runRound(deadline: number) {
   // its error text until it sends, so counting errors alone cannot tell those apart.
   await setSetting('last_round_throttled', throttled ? 'yes' : 'no')
 
-  return { replies: replied, autoReplies: auto, bounced, optedOut, drafted, sent, held, throttled }
+  return {
+    replies: replied,
+    autoReplies: auto,
+    bounced,
+    optedOut,
+    drafted,
+    sent,
+    held,
+    throttled,
+    purchases: purchases.synced,
+    ...(purchases.error ? { purchaseError: purchases.error } : {}),
+  }
 }

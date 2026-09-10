@@ -123,6 +123,16 @@ export async function saveSendingLimits(_prev: State, formData: FormData): Promi
   }
 }
 
+export async function saveAttribution(_prev: State, formData: FormData): Promise<State> {
+  await requireUser()
+  // A quarter by default: B2B training gets bought after a procurement cycle, not the
+  // same week. Bounded because a window of 10 years makes every purchase a conversion.
+  const days = Math.max(1, Math.min(730, Number(formData.get('attribution_window_days')) || 90))
+  await setSetting('attribution_window_days', String(days))
+  refresh()
+  return { ok: `Saved. A purchase counts when it lands within ${days} days of the first email.` }
+}
+
 /* --------------------------------------------------------------- suppression */
 
 export async function addSuppression(_prev: State, formData: FormData): Promise<State> {

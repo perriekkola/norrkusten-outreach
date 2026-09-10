@@ -3,8 +3,9 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { db, getSetting } from '@/lib/db'
 import { dailySendCap, leadCooldownDays, roundsPerDay, sendSpacingMs } from '@/lib/engine'
+import { lmsCheck } from '@/lib/lms'
 import { Mailboxes, type MailboxRow } from './mailboxes'
-import { SendingLimitsForm, SettingsForm, UserForm } from './settings-form'
+import { AttributionForm, SendingLimitsForm, SettingsForm, UserForm } from './settings-form'
 import { Suppressions, type SuppressionRow } from './suppressions'
 
 const KEYS = [
@@ -19,12 +20,21 @@ const KEYS = [
   { name: 'APP_URL', what: 'Open tracking pixel (auto on Vercel)' },
   { name: 'AUTH_SECRET', what: 'Session signing and mailbox password encryption' },
   { name: 'CRON_SECRET', what: 'Protects /api/cron' },
+  { name: 'LMS_BASE_URL', what: 'Norrkusten portal — purchase tracking' },
+  { name: 'LMS_API_TOKEN', what: 'Portal API token, scopes courses:read + purchases:read' },
 ] as const
 
 export const metadata = { title: 'Settings' }
 
 export default async function SettingsPage() {
   const senderName = await getSetting('sender_name')
+  const attributionDays = Number(await getSetting('attribution_window_days', '90')) || 90
+  const lms = await lmsCheck()
+  const [purchases] = (await db()`
+    select count(*)::int as n, max(synced_at) as at from purchases`) as {
+    n: number
+    at: string | null
+  }[]
   const [cap, cooldown, spacingMs, rounds] = await Promise.all([
     dailySendCap(),
     leadCooldownDays(),
@@ -61,6 +71,33 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <Mailboxes mailboxes={mailboxes} />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Purchase tracking</CardTitle>
+          <CardDescription>
+            Purchases are read from the Norrkusten portal every round and matched back to
+            the leads that were emailed, which is what the Bought column on Analytics
+            counts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm">
+            <Badge variant={lms.ok ? 'default' : 'secondary'}>
+              {lms.ok ? 'Connected' : 'Not reachable'}
+            </Badge>{' '}
+            <span className="text-muted-foreground">{lms.detail}</span>
+          </div>
+          <p className="text-muted-foreground text-sm">
+            {purchases.n} purchase(s) mirrored
+            {purchases.at
+              ? `, last synced ${new Date(purchases.at).toLocaleString('sv-SE')}`
+              : ' — nothing synced yet'}
+            .
+          </p>
+          <AttributionForm days={attributionDays} />
         </CardContent>
       </Card>
 

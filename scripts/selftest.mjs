@@ -856,5 +856,87 @@ assert.equal(
   'a round that threw records why',
 )
 
+/* ------------------------------------------------------- purchase matching */
+
+// The whole point of the feature: a purchase days after an email counts, and one that
+// arrives before it or long after it does not. Four leads, four purchases, one view.
+await q(`insert into settings (key, value) values ('attribution_window_days', '90')
+         on conflict (key) do update set value = excluded.value`)
+
+await q(`insert into leads (id, email, company_name, company_domain) values
+  (901, 'thomas@st1.com',   'St1 Sverige AB', 'st1.com'),
+  (902, 'anna@nordvik.se',  'Nordvik Bygg AB', 'nordvik.se'),
+  (903, 'per@sandvik.com',  'Sandviken Industri AB', 'sandviken-industri.se'),
+  (904, 'ola@ingenkop.se',  'Ingen Köp AB', 'ingenkop.se')`)
+await q(`insert into campaigns (id, name) values (900, 'Conversion test')`)
+await q(`insert into enrollments (id, campaign_id, lead_id) values
+  (901, 900, 901), (902, 900, 902), (903, 900, 903), (904, 900, 904)`)
+await q(`insert into messages (enrollment_id, lead_id, step, subject, body, status, sent_at) values
+  (901, 901, 0, 's', 'b', 'sent', now() - interval '30 days'),
+  (902, 902, 0, 's', 'b', 'sent', now() - interval '30 days'),
+  (903, 903, 0, 's', 'b', 'sent', now() - interval '30 days'),
+  (904, 904, 0, 's', 'b', 'sent', now() - interval '30 days')`)
+
+await q(`insert into purchases (id, purchased_at, org_name, emails, domains, total_excl_vat) values
+  -- A colleague on the same domain bought: the case that started this.
+  ('p-domain', now() - interval '25 days', 'St1 Sverige AB',
+   '{"inkop@st1.com"}', '{"st1.com"}', 4990),
+  -- The person mailed bought themselves.
+  ('p-email',  now() - interval '20 days', 'Nordvik Bygg AB',
+   '{"anna@nordvik.se"}', '{"nordvik.se"}', 2495),
+  -- Right company, different domain than the one we mailed. Name match earns it.
+  ('p-name',   now() - interval '10 days', 'Sandviken Industri',
+   '{"faktura@sandviken.nu"}', '{"sandviken.nu"}', 7000),
+  -- Before the email went out, so the email cannot have caused it.
+  ('p-before', now() - interval '40 days', 'Ingen Köp AB',
+   '{"ola@ingenkop.se"}', '{"ingenkop.se"}', 999),
+  -- Nobody we ever emailed.
+  ('p-cold',   now() - interval '5 days',  'Okänd AB',
+   '{"x@okand.se"}', '{"okand.se"}', 1234)`)
+
+const matched = await q(`select purchase_id, lead_id, matched_on from conversions order by purchase_id`)
+const byId = Object.fromEntries(matched.map((r) => [r.purchase_id, r]))
+assert.equal(byId['p-domain']?.matched_on, 'domain', 'a colleague on the mailed domain converts')
+assert.equal(Number(byId['p-domain']?.lead_id), 901, 'and is credited to the lead we mailed')
+assert.equal(byId['p-email']?.matched_on, 'email', 'an exact address match converts')
+assert.equal(byId['p-name']?.matched_on, 'company', 'company name is the cross-domain fallback')
+assert.ok(!byId['p-before'], 'a purchase made before the first email is not a conversion')
+assert.ok(!byId['p-cold'], 'a purchase by someone never emailed is not a conversion')
+
+// The window is a setting, and shortening it has to actually exclude the slower sale.
+// What matters is the lag from the first email, not the age of the purchase: every lead
+// here was mailed 30 days ago, so p-domain lags 5 days, p-email 10 and p-name 20.
+await q(`update settings set value = '15' where key = 'attribution_window_days'`)
+const narrow = (await q(`select purchase_id from conversions`)).map((r) => r.purchase_id)
+assert.ok(!narrow.includes('p-name'), 'a sale 20 days after the email falls outside a 15-day window')
+assert.ok(narrow.includes('p-email'), 'one 10 days after it stays inside')
+await q(`update settings set value = '90' where key = 'attribution_window_days'`)
+
+// Two colleagues mailed, one purchase. Revenue must not be counted twice, which is why
+// the view is one row per purchase rather than one per matching lead.
+await q(`insert into leads (id, email, company_name, company_domain)
+         values (905, 'kollega@st1.com', 'St1 Sverige AB', 'st1.com')`)
+await q(`insert into enrollments (id, campaign_id, lead_id) values (905, 900, 905)`)
+await q(`insert into messages (enrollment_id, lead_id, step, subject, body, status, sent_at)
+         values (905, 905, 0, 's', 'b', 'sent', now() - interval '28 days')`)
+assert.equal(
+  (await q(`select count(*)::int as n from conversions where purchase_id = 'p-domain'`))[0].n,
+  1,
+  'one purchase is one conversion however many colleagues were emailed',
+)
+assert.equal(
+  Number((await q(`select coalesce(sum(total_excl_vat),0) as t from conversions`))[0].t),
+  4990 + 2495 + 7000,
+  'and revenue sums each purchase once',
+)
+
+// An exact address match must outrank a domain match for the same purchase, so the
+// credited lead is the person who actually bought.
+await q(`update purchases set emails = '{"kollega@st1.com","inkop@st1.com"}'
+          where id = 'p-domain'`)
+const [best] = await q(`select lead_id, matched_on from conversions where purchase_id = 'p-domain'`)
+assert.equal(best.matched_on, 'email', 'the stronger match wins')
+assert.equal(Number(best.lead_id), 905, 'and credits the address that appears on the purchase')
+
 await db.close()
 console.log('selftest: all checks passed')
