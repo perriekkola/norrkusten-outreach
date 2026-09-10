@@ -930,6 +930,29 @@ assert.equal(
   'and revenue sums each purchase once',
 )
 
+// Licences handed out of a pool arrive as their own zero-kronor rows. Real data had one
+// order showing up as three conversions this way, so the count has to ignore them while
+// the paid order it came from still counts.
+await q(`insert into purchases (id, purchased_at, org_name, emails, domains, total_excl_vat, source) values
+  ('p-pool',   now() - interval '18 days', 'Nordvik Bygg AB', '{"anna@nordvik.se"}', '{"nordvik.se"}', 9000, 'web'),
+  ('p-draw-1', now() - interval '17 days', 'Nordvik Bygg AB', '{"anna@nordvik.se"}', '{"nordvik.se"}', 0, 'license_credit'),
+  ('p-draw-2', now() - interval '16 days', 'Nordvik Bygg AB', '{"anna@nordvik.se"}', '{"nordvik.se"}', 0, 'license_credit')`)
+const nordvik = (await q(`select purchase_id from conversions where org_name = 'Nordvik Bygg AB'`))
+  .map((r) => r.purchase_id)
+assert.ok(nordvik.includes('p-pool'), 'the paid order counts')
+assert.ok(!nordvik.includes('p-draw-1'), 'a licence drawn from the pool does not')
+assert.ok(!nordvik.includes('p-draw-2'), 'however many are drawn')
+// An order keyed in by hand is still an order — only pool draws are excluded.
+await q(`insert into purchases (id, purchased_at, org_name, emails, domains, total_excl_vat, source)
+         values ('p-admin', now() - interval '12 days', 'St1 Sverige AB',
+                 '{"inkop@st1.com"}', '{"st1.com"}', 4000, 'admin')`)
+assert.equal(
+  (await q(`select count(*)::int as n from conversions where purchase_id = 'p-admin'`))[0].n,
+  1,
+  'a purchase entered in the admin portal counts like any other',
+)
+await q(`delete from purchases where id in ('p-pool','p-draw-1','p-draw-2','p-admin')`)
+
 // An exact address match must outrank a domain match for the same purchase, so the
 // credited lead is the person who actually bought.
 await q(`update purchases set emails = '{"kollega@st1.com","inkop@st1.com"}'

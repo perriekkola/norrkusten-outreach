@@ -328,6 +328,12 @@ purchase_keys as (
            '\m(ab|aktiebolag|publ|hb|kb|oy|as)\M', '', 'g'),
            '[^a-z0-9]', '', 'g') as company
     from purchases p
+   -- A licence drawn from the pool is not a second sale. The organisation buys a pot of
+   -- licences once and hands them out one at a time, and each hand-out arrives here as
+   -- its own row at zero kronor. Counting those makes one order look like four, so a
+   -- company that bought once reads as a company that keeps buying. Mirrored either way:
+   -- the rows stay in `purchases`, they just do not count as conversions.
+   where coalesce(p.source, '') <> 'license_credit'
 )
 select distinct on (p.id)
        p.id as purchase_id,

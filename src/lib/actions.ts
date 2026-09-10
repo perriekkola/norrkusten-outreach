@@ -18,6 +18,7 @@ import { forgetMailbox, sendEmail, verifyMailbox } from './email'
 import { encrypt } from './secrets'
 import { LEAD_IS_SUPPRESSED, suppress, unsuppress } from './suppression'
 import { leadFilter } from './leads'
+import { syncPurchases } from './lms'
 import { draftForEnrollment, ingestSearches, sendMessage, tick } from './engine'
 
 /** Something a save needs to ask about afterwards, rather than decide on its own. */
@@ -131,6 +132,29 @@ export async function saveAttribution(_prev: State, formData: FormData): Promise
   await setSetting('attribution_window_days', String(days))
   refresh()
   return { ok: `Saved. A purchase counts when it lands within ${days} days of the first email.` }
+}
+
+/**
+ * Pulls purchases now rather than waiting for the next round. Worth a button of its own:
+ * the automatic sync rides along with sending and drafting, so checking whether a sale
+ * landed would otherwise mean triggering a round that also mails people.
+ */
+export async function syncPurchasesNow(): Promise<State> {
+  await requireUser()
+  const { synced, skipped, error } = await syncPurchases()
+  if (error) return { error: `Sync failed: ${error}` }
+  const [row] = (await db()`
+    select (select count(*)::int from purchases)   as purchases,
+           (select count(*)::int from conversions) as conversions`) as {
+    purchases: number
+    conversions: number
+  }[]
+  refresh()
+  return {
+    ok:
+      `Synced ${synced} purchase(s)${skipped ? `, skipped ${skipped} without an id or date` : ''}. ` +
+      `${row.purchases} mirrored in total, ${row.conversions} matched to a lead we emailed.`,
+  }
 }
 
 /* --------------------------------------------------------------- suppression */

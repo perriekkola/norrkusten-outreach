@@ -7,7 +7,14 @@ import { Spinner } from '@/components/spinner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { addUser, saveAttribution, saveSendingLimits, saveSettings } from '@/lib/actions'
+import { SubmitButton } from '@/components/submit-button'
+import {
+  addUser,
+  saveAttribution,
+  saveSendingLimits,
+  saveSettings,
+  syncPurchasesNow,
+} from '@/lib/actions'
 
 export function SettingsForm({ senderName }: { senderName: string }) {
   const [state, action, pending] = useActionState(saveSettings, {})
@@ -137,6 +144,20 @@ export function SendingLimitsForm({
         {pending ? <Spinner /> : null}
         {pending ? 'Saving…' : 'Save'}
       </Button>
+    </form>
+  )
+}
+
+export function SyncPurchasesForm() {
+  const [state, action] = useActionState(syncPurchasesNow, {})
+
+  return (
+    <form action={action} className="space-y-2">
+      <SubmitButton variant="outline" size="sm" pendingLabel="Syncing…">
+        Sync now
+      </SubmitButton>
+      {state.ok ? <p className="text-sm text-green-600 dark:text-green-400">{state.ok}</p> : null}
+      {state.error ? <p className="text-destructive text-sm">{state.error}</p> : null}
     </form>
   )
 }

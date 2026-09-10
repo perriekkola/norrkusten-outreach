@@ -5,7 +5,13 @@ import { db, getSetting } from '@/lib/db'
 import { dailySendCap, leadCooldownDays, roundsPerDay, sendSpacingMs } from '@/lib/engine'
 import { lmsCheck } from '@/lib/lms'
 import { Mailboxes, type MailboxRow } from './mailboxes'
-import { AttributionForm, SendingLimitsForm, SettingsForm, UserForm } from './settings-form'
+import {
+  AttributionForm,
+  SendingLimitsForm,
+  SettingsForm,
+  SyncPurchasesForm,
+  UserForm,
+} from './settings-form'
 import { Suppressions, type SuppressionRow } from './suppressions'
 
 const KEYS = [
@@ -98,6 +104,7 @@ export default async function SettingsPage() {
             .
           </p>
           <AttributionForm days={attributionDays} />
+          <SyncPurchasesForm />
         </CardContent>
       </Card>
 
