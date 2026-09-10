@@ -93,7 +93,8 @@ export default async function LeadPage({ params }: PageProps<'/leads/[id]'>) {
         <div className="flex shrink-0 items-center gap-1.5">
           <Hint label="How replies stop a sequence">
             Replies are spotted on their own, and matched to the exact email that was
-            answered, so only that campaign stops. If someone answers another way, from a
+            answered, so only that campaign stops. A purchase in the LMS stops that
+            campaign the same way, and anything already drafted for them is dropped. If someone answers another way, from a
             different address or by phone, mark it by hand on the campaign below. To stop
             every campaign at once, block the address from the Leads page.
           </Hint>

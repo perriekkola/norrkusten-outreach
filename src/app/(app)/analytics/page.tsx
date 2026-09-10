@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { money } from '@/lib/format'
 import { AnalyticsFilters } from './analytics-filters'
 import { CampaignsTable } from './campaigns-table'
+import { PurchasesTable } from './purchases-table'
 
 type Funnel = {
   leads: number
@@ -28,6 +29,25 @@ export type CampaignRow = {
   replied: number
   bought: number
   revenue: number
+}
+
+export type PurchaseRow = {
+  purchase_id: string
+  purchased_at: string
+  course_title: string | null
+  course_code: string | null
+  org_name: string | null
+  domain: string
+  quantity: number
+  /** numeric comes back as a string from the driver. */
+  total_excl_vat: string | null
+  currency: string
+  matched_on: 'email' | 'domain' | 'company'
+  lead_id: number
+  lead_email: string
+  campaign_id: number
+  campaign_name: string
+  days_after: number
 }
 
 const percent = (part: number, whole: number) =>
@@ -112,6 +132,25 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
       from campaigns c
      where (${campaign}::int is null or c.id = ${campaign}::int)
      order by c.created_at desc`) as CampaignRow[]
+
+  // Which domains actually buy. The same filters as the funnel, so the table and the
+  // Bought card can never disagree about what the period contained.
+  const purchases = (await db()`
+    select cv.purchase_id, cv.purchased_at, cv.course_title, cv.course_code, cv.org_name,
+           cv.quantity, cv.total_excl_vat, cv.currency, cv.matched_on, cv.lead_id,
+           l.email as lead_email,
+           lower(regexp_replace(
+             coalesce(nullif(l.company_domain, ''), split_part(l.email, '@', 2)),
+             '^www\.', '')) as domain,
+           c.id as campaign_id, c.name as campaign_name,
+           extract(day from cv.purchased_at - cv.first_sent_at)::int as days_after
+      from conversions cv
+      join leads l on l.id = cv.lead_id
+      join campaigns c on c.id = cv.campaign_id
+     where (${campaign}::int is null or cv.campaign_id = ${campaign}::int)
+       and (${fromDate}::date is null or cv.purchased_at >= ${fromDate}::date)
+       and (${untilDate}::date is null or cv.purchased_at < ${untilDate}::date)
+     order by cv.purchased_at desc`) as PurchaseRow[]
 
   const allCampaigns = (await db()`
     select id, name from campaigns order by created_at desc`) as { id: number; name: string }[]
@@ -218,6 +257,27 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
             <p className="text-muted-foreground p-6 text-sm">No campaigns yet.</p>
           ) : (
             <CampaignsTable campaigns={campaigns} />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Which domains bought</CardTitle>
+          <CardDescription>
+            Every purchase credited to outreach, newest first. &ldquo;After&rdquo; is the days
+            between the first email to that company and the sale — useful for setting the
+            attribution window to something the data supports.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0">
+          {purchases.length === 0 ? (
+            <p className="text-muted-foreground px-6 text-sm">
+              No purchases matched yet. Purchases sync every round; Settings has a Sync now
+              button and shows whether the portal is reachable.
+            </p>
+          ) : (
+            <PurchasesTable purchases={purchases} />
           )}
         </CardContent>
       </Card>

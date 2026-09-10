@@ -961,5 +961,80 @@ const [best] = await q(`select lead_id, matched_on from conversions where purcha
 assert.equal(best.matched_on, 'email', 'the stronger match wins')
 assert.equal(Number(best.lead_id), 905, 'and credits the address that appears on the purchase')
 
+/* ------------------------------------------------- buying stops the sequence */
+
+// Following up "are you interested?" to someone who already paid is the one outcome
+// worth failing a build over. Mirrors stopWonSequences() in lms.ts.
+await q(`insert into campaigns (id, name) values (910, 'Other campaign')`)
+await q(`insert into enrollments (id, campaign_id, lead_id) values (910, 910, 902)`)
+await q(`insert into messages (enrollment_id, lead_id, step, subject, body, status)
+         values (902, 902, 1, 'follow up', 'b', 'approved'),
+                (910, 902, 0, 'other', 'b', 'draft')`)
+
+const won = await q(
+  `update enrollments e set status = 'won'
+    where e.status = 'active'
+      and exists (select 1 from conversions cv
+                   where cv.lead_id = e.lead_id and cv.campaign_id = e.campaign_id)
+   returning e.id, e.lead_id`,
+)
+assert.ok(
+  won.some((r) => Number(r.id) === 902),
+  'the campaign that sold them stops',
+)
+assert.ok(
+  !won.some((r) => Number(r.id) === 910),
+  'a different campaign to the same person keeps running — a customer may want another course',
+)
+
+await q(
+  `update messages set status = 'skipped'
+    where enrollment_id = any($1::int[]) and status in ('draft', 'approved')`,
+  [won.map((r) => r.id)],
+)
+assert.equal(
+  (await q(`select status from messages where enrollment_id = 902 and step = 1`))[0].status,
+  'skipped',
+  'an already-approved email is dropped, not left in the outbox to go out next round',
+)
+assert.equal(
+  (await q(`select status from messages where enrollment_id = 910`))[0].status,
+  'draft',
+  'and the other campaign keeps its draft',
+)
+
+// Drafting and sending both gate on 'active', so 'won' is what actually stops the work.
+assert.equal(
+  (await q(`select count(*)::int as n from enrollments
+             where lead_id = 902 and campaign_id = 900 and status = 'active'`))[0].n,
+  0,
+  'nothing is left active for the campaign they bought from',
+)
+
+// Re-running must not undo a reply or a bounce that was recorded first.
+await q(`update enrollments set status = 'replied' where id = 910`)
+const second = await q(
+  `update enrollments e set status = 'won'
+    where e.status = 'active'
+      and exists (select 1 from conversions cv
+                   where cv.lead_id = e.lead_id and cv.campaign_id = e.campaign_id)
+   returning e.id`,
+)
+assert.equal(second.length, 0, 'a second pass touches nothing — the update is idempotent')
+assert.equal(
+  (await q(`select status from enrollments where id = 910`))[0].status,
+  'replied',
+  'and a status that is not active is never overwritten',
+)
+
+// Enrolling again must not revive them: the insert relies on the unique pair.
+await q(`insert into enrollments (campaign_id, lead_id) values (900, 902)
+         on conflict (campaign_id, lead_id) do nothing`)
+assert.equal(
+  (await q(`select status from enrollments where campaign_id = 900 and lead_id = 902`))[0].status,
+  'won',
+  'the next enrolment pass cannot set a won lead back to active',
+)
+
 await db.close()
 console.log('selftest: all checks passed')

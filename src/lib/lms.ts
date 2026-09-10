@@ -117,6 +117,47 @@ const domainsOf = (emails: string[]) => [
 ]
 
 /**
+ * Stops the sequence for anyone who bought.
+ *
+ * Same scope as a reply: the campaign that sold them stops, the others carry on. A
+ * customer is a fair person to tell about a different course, and a campaign here has no
+ * course id — only an offer written in prose — so there is no way to prove that the
+ * campaign still running is pitching the very thing they just bought.
+ *
+ * Colleagues are deliberately left alone for the same reason. A purchase is credited to
+ * one lead; other people at that company stay enrolled, because "someone at their firm
+ * bought something" is not evidence that this campaign's course is the one they bought.
+ *
+ * Idempotent, and one-way: it only touches `active` rows, so a reply or a bounce already
+ * recorded is never overwritten, and shortening the attribution window later does not
+ * un-win a sequence that has already been stopped.
+ */
+export async function stopWonSequences(): Promise<{ stopped: number }> {
+  const stopped = (await db()`
+    update enrollments e set status = 'won'
+     where e.status = 'active'
+       and exists (select 1 from conversions cv
+                    where cv.lead_id = e.lead_id and cv.campaign_id = e.campaign_id)
+    returning e.id, e.lead_id`) as { id: number; lead_id: number }[]
+
+  if (!stopped.length) return { stopped: 0 }
+
+  // Anything already written for them has to be dropped too, exactly as a reply does it.
+  // Without this an approved email is still sitting in the outbox and goes out on the next
+  // round — asking whether they are interested in what they have already paid for.
+  await db()`
+    update messages set status = 'skipped'
+     where enrollment_id = any(${stopped.map((row) => row.id)}::int[])
+       and status in ('draft', 'approved')`
+
+  await db()`
+    update leads set status = 'won'
+     where id = any(${stopped.map((row) => row.lead_id)}::int[]) and status <> 'won'`
+
+  return { stopped: stopped.length }
+}
+
+/**
  * Pulls purchases into the local table. Incremental: only rows changed since the last
  * successful sync, with an hour of overlap so a purchase written while the previous sync
  * was mid-flight is not skipped for ever. Re-reading a handful of rows is free; missing
@@ -125,6 +166,7 @@ const domainsOf = (emails: string[]) => [
 export async function syncPurchases(): Promise<{
   synced: number
   skipped: number
+  stopped?: number
   error?: string
 }> {
   if (!lmsConfigured()) return { synced: 0, skipped: 0, error: 'not configured' }
@@ -191,5 +233,6 @@ export async function syncPurchases(): Promise<{
   }
 
   await setSetting('lms_purchases_synced_at', startedAt)
-  return { synced, skipped }
+  const { stopped } = await stopWonSequences()
+  return { synced, skipped, stopped }
 }

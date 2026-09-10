@@ -738,7 +738,7 @@ async function runRound(deadline: number) {
   // round of sending.
   const purchases = await syncPurchases().catch((error) => {
     console.error('purchase sync failed', error)
-    return { synced: 0, skipped: 0, error: String(error) }
+    return { synced: 0, skipped: 0, stopped: 0, error: String(error) }
   })
 
   // Replies before anything else: a lead who answered must not get the email already
@@ -789,6 +789,7 @@ async function runRound(deadline: number) {
     held,
     throttled,
     purchases: purchases.synced,
+    wonStopped: purchases.stopped ?? 0,
     ...(purchases.error ? { purchaseError: purchases.error } : {}),
   }
 }

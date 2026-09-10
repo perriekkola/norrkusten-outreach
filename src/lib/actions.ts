@@ -141,7 +141,7 @@ export async function saveAttribution(_prev: State, formData: FormData): Promise
  */
 export async function syncPurchasesNow(): Promise<State> {
   await requireUser()
-  const { synced, skipped, error } = await syncPurchases()
+  const { synced, skipped, stopped, error } = await syncPurchases()
   if (error) return { error: `Sync failed: ${error}` }
   const [row] = (await db()`
     select (select count(*)::int from purchases)   as purchases,
@@ -153,7 +153,8 @@ export async function syncPurchasesNow(): Promise<State> {
   return {
     ok:
       `Synced ${synced} purchase(s)${skipped ? `, skipped ${skipped} without an id or date` : ''}. ` +
-      `${row.purchases} mirrored in total, ${row.conversions} matched to a lead we emailed.`,
+      `${row.purchases} mirrored in total, ${row.conversions} matched to a lead we emailed` +
+      `${stopped ? `, ${stopped} sequence(s) stopped because they bought` : ''}.`,
   }
 }
 
