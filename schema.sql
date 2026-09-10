@@ -26,7 +26,6 @@ create table if not exists searches (
 
 create table if not exists leads (
   id                  serial primary key,
-  search_id           int references searches(id) on delete set null,
   email               text unique not null,
   first_name          text,
   last_name           text,
@@ -107,7 +106,6 @@ create table if not exists messages (
 );
 
 create index if not exists idx_leads_status   on leads(status);
-create index if not exists idx_leads_search    on leads(search_id);
 -- The sibling-research lookup in engine.ts runs once per lead about to be researched.
 -- Partial: the only rows it ever wants are the ones that already have a brief.
 create index if not exists idx_leads_research_domain on leads(company_domain)
@@ -221,3 +219,34 @@ create table if not exists ai_usage (
   created_at        timestamptz not null default now()
 );
 create index if not exists idx_ai_usage_op on ai_usage(op, id desc);
+
+-- Which searches found a lead — many to many, because one address turns up in several.
+--
+-- This used to be a single `leads.search_id`. The insert is `on conflict (email) do
+-- nothing`, so the second search to find someone imported nothing and, as far as the app
+-- was concerned, had not found them: delete a search, run the same one again, and only
+-- the handful of genuinely new addresses came back. The rest were still there, orphaned
+-- and invisible, because the column could only ever remember the first search.
+create table if not exists lead_searches (
+  search_id  int not null references searches(id) on delete cascade,
+  lead_id    int not null references leads(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (search_id, lead_id)
+);
+-- "which searches is this lead in", the direction the primary key does not serve.
+create index if not exists idx_lead_searches_lead on lead_searches(lead_id);
+
+-- Guarded so the file stays idempotent: on a database that already migrated, and on a
+-- fresh one, there is no column to read and this is a no-op.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_name = 'leads' and column_name = 'search_id') then
+    insert into lead_searches (search_id, lead_id)
+      select search_id, id from leads where search_id is not null
+      on conflict do nothing;
+    alter table leads drop column search_id;
+  end if;
+end
+$$;
+drop index if exists idx_leads_search;

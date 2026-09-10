@@ -14,7 +14,8 @@ export type LeadFilter = { query: string; source: number | null }
 
 export function leadFilter({ query, source }: LeadFilter) {
   return {
-    where: `($1::int is null or l.search_id = $1::int)
+    where: `($1::int is null or exists (select 1 from lead_searches ls
+                                        where ls.lead_id = l.id and ls.search_id = $1::int))
         and ($2 = '' or l.full_name ilike '%' || $2 || '%'
              or l.email ilike '%' || $2 || '%'
              or l.company_name ilike '%' || $2 || '%'

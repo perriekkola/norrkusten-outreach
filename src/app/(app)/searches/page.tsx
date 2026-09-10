@@ -115,7 +115,7 @@ export default async function SearchesPage() {
                             action={deleteSearch}
                             payload={{ id: search.id }}
                             title="Delete this search?"
-                            description="Removes the search record. The leads it imported stay, but they lose their source, so campaigns pulling from this search will no longer pick them up."
+                            description="Removes the search record. The leads it found stay in the list, but they lose this source, so campaigns pulling from this search stop picking them up. Running the same search again finds them all over."
                             confirmLabel="Delete"
                             pendingLabel="Deleting…"
                           >

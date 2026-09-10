@@ -561,7 +561,6 @@ assert.deepEqual(
 )
 
 // The enrol query has to skip them, or every suppressed lead still costs a scoring call.
-await db.exec(`update leads set search_id = null where id > 0`)
 assert.deepEqual(
   await q(
     `select l.id from leads l where l.status <> 'rejected' and not ${leadSuppressed} order by l.id`,
@@ -631,11 +630,15 @@ await db.exec(`
     (8, 'Other search', '{}'::jsonb, 'ready');
   select setval(pg_get_serial_sequence('leads','id'), 100);
   select setval(pg_get_serial_sequence('enrollments','id'), 100);
-  insert into leads (search_id, email, full_name, company_name, job_title)
-  select 7, 'p' || g || '@paged.se', 'Person ' || g, 'Acme ' || g, 'Konstruktionschef'
+  insert into leads (email, full_name, company_name, job_title)
+  select 'p' || g || '@paged.se', 'Person ' || g, 'Acme ' || g, 'Konstruktionschef'
     from generate_series(1, 25) g;
-  insert into leads (search_id, email, full_name, company_name, job_title)
-  values (8, 'other@elsewhere.se', 'Other One', 'Elsewhere', 'VD');
+  insert into leads (email, full_name, company_name, job_title)
+  values ('other@elsewhere.se', 'Other One', 'Elsewhere', 'VD');
+  insert into lead_searches (search_id, lead_id)
+  select 7, id from leads where email like '%@paged.se';
+  insert into lead_searches (search_id, lead_id)
+  select 8, id from leads where email = 'other@elsewhere.se';
 `)
 
 const { where, params } = leadFilter({ query: '', source: 7 })
@@ -681,6 +684,75 @@ const enrolled = await q(
   [...params, 1],
 )
 assert.equal(enrolled.length, 24, 'enroll-all-matching takes every match but the suppressed one')
+
+/* ----------------------------------------- a search re-finding known leads */
+
+// The reported bug: search, campaign, delete both, search again with the same
+// parameters — and only a few leads came back. `on conflict (email) do nothing` gave
+// the second search nothing to return, so it looked empty while the leads sat there
+// with a dangling source. This mirrors importDataset(): the lead row is written once,
+// the membership row every time a search finds them.
+const importOne = async (searchId, email) =>
+  (
+    await q(
+      `with lead as (
+         insert into leads (email, full_name) values ($2, 'Reimported')
+         on conflict (email) do update set email = excluded.email
+         returning id
+       )
+       insert into lead_searches (search_id, lead_id)
+       select $1, id from lead
+       on conflict do nothing
+       returning lead_id`,
+      [searchId, email],
+    )
+  ).length
+
+await db.exec(`
+  insert into searches (id, label, input, status) values
+    (9, 'First run', '{}'::jsonb, 'ready'),
+    (10, 'Same run again', '{}'::jsonb, 'ready'),
+    (11, 'Overlapping', '{}'::jsonb, 'ready');
+`)
+
+assert.equal(await importOne(9, 'again@dup.se'), 1, 'a new address imports')
+assert.equal(await importOne(9, 'again@dup.se'), 0, 'the same search does not count them twice')
+
+// Delete the search the way the app does. The lead survives; the membership goes.
+await q(`delete from searches where id = 9`)
+assert.equal(
+  (await q(`select 1 from leads where email = 'again@dup.se'`)).length,
+  1,
+  'deleting a search leaves the leads alone',
+)
+
+assert.equal(
+  await importOne(10, 'again@dup.se'),
+  1,
+  're-running the same search finds the lead again instead of importing nothing',
+)
+const reFound = leadFilter({ query: '', source: 10 })
+assert.equal(
+  (await q(`select 1 from leads l where ${reFound.where}`, reFound.params)).length,
+  1,
+  'and the leads page shows them under the new search',
+)
+
+// Two live searches that overlap: the lead belongs to both, neither steals them.
+assert.equal(await importOne(11, 'again@dup.se'), 1, 'an overlapping search counts them too')
+for (const searchId of [10, 11]) {
+  const seen = leadFilter({ query: '', source: searchId })
+  assert.equal(
+    (await q(`select 1 from leads l where ${seen.where}`, seen.params)).length,
+    1,
+    `search ${searchId} still has the lead`,
+  )
+}
+assert.equal(
+  (await q(`select count(*)::int as n from leads where email = 'again@dup.se'`))[0].n,
+  1,
+  'and there is still only one of them',
+)
 
 /* ------------------------------------------------- removed enrollments */
 

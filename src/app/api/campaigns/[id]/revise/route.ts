@@ -1,6 +1,6 @@
 import { requireUser } from '@/lib/auth'
 import { reviseCampaign, describeApiError, type CampaignDraft } from '@/lib/ai'
-import { db, getSetting, type Campaign, type WritingMode } from '@/lib/db'
+import { db, getSetting, searchOptions, type Campaign, type WritingMode } from '@/lib/db'
 import { progressStream } from '@/lib/stream'
 
 export const maxDuration = 300
@@ -24,11 +24,7 @@ export async function POST(request: Request, context: RouteContext<'/api/campaig
   const links = [...instruction.matchAll(/https?:\/\/[^\s<>"']+/g)].map((match) => match[0])
 
   return progressStream<CampaignDraft>(async (report) => {
-    const searches = (await db()`
-      select s.id, s.label, count(l.id)::int as leads
-        from searches s left join leads l on l.search_id = s.id
-       group by s.id, s.label having count(l.id) > 0
-       order by s.created_at desc`) as { id: number; label: string; leads: number }[]
+    const searches = await searchOptions()
 
     try {
       return await reviseCampaign({

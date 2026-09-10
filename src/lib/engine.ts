@@ -14,7 +14,13 @@ const str = (row: Record<string, unknown>, key: string) => {
 }
 
 /**
- * Apify rows -> leads. Unknown fields survive in `raw`.
+ * Apify rows -> leads, and a `lead_searches` row saying this search found them.
+ *
+ * The membership row is the point. A person the database already knows — from an
+ * earlier search, or from this same search before it was deleted and re-run — must
+ * still come out of *this* search, and `on conflict (email) do nothing` on `leads`
+ * alone means they do not. The lead row is written once; the membership row is written
+ * every time a search finds them.
  *
  * Two things stop a duplicate here, and both are needed. The unique index on
  * `leads.email` only fires once the address is normalised — a scraper handing back
@@ -32,23 +38,34 @@ async function importDataset(searchId: number, rows: Record<string, unknown>[]) 
   for (const row of rows) {
     const email = normalizeEmail(str(row, 'email') ?? '')
     if (!email.includes('@') || blocked.has(email)) continue
-    const result = (await db()`
-      insert into leads (
-        search_id, email, first_name, last_name, full_name, job_title, seniority, linkedin,
-        phone, city, country, company_name, company_domain, company_website, company_linkedin,
-        company_size, industry, company_description, raw
-      ) values (
-        ${searchId}, ${email}, ${str(row, 'first_name')}, ${str(row, 'last_name')},
-        ${str(row, 'full_name')}, ${str(row, 'job_title')}, ${str(row, 'seniority_level')},
-        ${str(row, 'linkedin')}, ${str(row, 'mobile_number')}, ${str(row, 'city')},
-        ${str(row, 'country')}, ${str(row, 'company_name')}, ${str(row, 'company_domain')},
-        ${str(row, 'company_website')}, ${str(row, 'company_linkedin')},
-        ${str(row, 'company_size')}, ${str(row, 'industry')}, ${str(row, 'company_description')},
-        ${jsonb(row)}::jsonb
+    // One statement per row, not two: a dataset runs to 10 000 rows and every extra
+    // round trip to Neon is charged against this invocation's 300 seconds. The `do
+    // update` is a no-op write whose only job is to make `returning id` fire for an
+    // address we already hold — `do nothing` returns nothing, and then the membership
+    // row could not be written for exactly the leads that need it most.
+    const linked = (await db()`
+      with lead as (
+        insert into leads (
+          email, first_name, last_name, full_name, job_title, seniority, linkedin,
+          phone, city, country, company_name, company_domain, company_website, company_linkedin,
+          company_size, industry, company_description, raw
+        ) values (
+          ${email}, ${str(row, 'first_name')}, ${str(row, 'last_name')},
+          ${str(row, 'full_name')}, ${str(row, 'job_title')}, ${str(row, 'seniority_level')},
+          ${str(row, 'linkedin')}, ${str(row, 'mobile_number')}, ${str(row, 'city')},
+          ${str(row, 'country')}, ${str(row, 'company_name')}, ${str(row, 'company_domain')},
+          ${str(row, 'company_website')}, ${str(row, 'company_linkedin')},
+          ${str(row, 'company_size')}, ${str(row, 'industry')}, ${str(row, 'company_description')},
+          ${jsonb(row)}::jsonb
+        )
+        on conflict (email) do update set email = excluded.email
+        returning id
       )
-      on conflict (email) do nothing
-      returning id`) as { id: number }[]
-    if (result.length) imported++
+      insert into lead_searches (search_id, lead_id)
+      select ${searchId}, id from lead
+      on conflict do nothing
+      returning lead_id`) as { lead_id: number }[]
+    if (linked.length) imported++
   }
   return imported
 }
@@ -466,7 +483,8 @@ export async function runCampaign(
     const inserted = (await db().query(
       `insert into enrollments (campaign_id, lead_id)
        select $1, l.id from leads l
-        where l.search_id = any($2::int[])
+        where exists (select 1 from lead_searches ls
+                       where ls.lead_id = l.id and ls.search_id = any($2::int[]))
           -- 'bounced' as well as 'rejected'. The address does not exist, so enrolling it
           -- somewhere else only buys another bounce, and bounce rate is charged to the
           -- domain rather than to the campaign that earned it.

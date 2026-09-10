@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent } from '@/components/ui/card'
-import { db, type Campaign, type Lead } from '@/lib/db'
+import { db, searchOptions, type Campaign, type Lead } from '@/lib/db'
 import { LEADS_PER_PAGE, LEAD_SORTS, leadFilter } from '@/lib/leads'
 import { orderBy, sortFromParams } from '@/lib/sort'
 
@@ -51,11 +51,7 @@ export default async function LeadsPage({ searchParams }: PageProps<'/leads'>) {
     'id' | 'name'
   >[]
 
-  const searches = (await db()`
-    select s.id, s.label, count(l.id)::int as leads
-      from searches s left join leads l on l.search_id = s.id
-     group by s.id, s.label having count(l.id) > 0
-     order by s.created_at desc`) as { id: number; label: string; leads: number }[]
+  const searches = await searchOptions()
 
   return (
     <>

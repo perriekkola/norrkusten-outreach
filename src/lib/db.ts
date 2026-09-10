@@ -28,7 +28,6 @@ export type Search = {
 
 export type Lead = {
   id: number
-  search_id: number | null
   email: string
   first_name: string | null
   last_name: string | null
@@ -50,6 +49,23 @@ export type Lead = {
   research: string | null
   status: string
   created_at: string
+}
+
+/** A search in the source picker, with how many leads it has found. */
+export type SearchOption = { id: number; label: string; leads: number }
+
+/**
+ * The searches worth picking as a source, newest first.
+ *
+ * Four pages draw this same list — the leads filter, both campaign forms and the two
+ * campaign AI routes — and four hand-written copies of it is how they drift apart.
+ */
+export async function searchOptions() {
+  return (await db()`
+    select s.id, s.label, count(ls.lead_id)::int as leads
+      from searches s join lead_searches ls on ls.search_id = s.id
+     group by s.id, s.label, s.created_at
+     order by s.created_at desc`) as SearchOption[]
 }
 
 export type Enrollment = {
