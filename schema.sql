@@ -288,13 +288,41 @@ create index if not exists idx_purchases_at      on purchases(purchased_at desc)
 create index if not exists idx_purchases_emails  on purchases using gin (emails);
 create index if not exists idx_purchases_domains on purchases using gin (domains);
 
+-- The company a lead belongs to, reduced to something comparable. Generated and stored
+-- rather than computed at every call site: three places needed it and three hand-written
+-- copies of the same regexp is how they drift apart.
+alter table leads add column if not exists domain text
+  generated always as (lower(regexp_replace(
+    coalesce(nullif(company_domain, ''), split_part(email, '@', 2)), '^www\.', ''))) stored;
+create index if not exists idx_leads_domain on leads(domain);
+
+-- Company keys in one place, so the free-mail guard is written once. Without it a single
+-- buyer on a shared provider would count as a colleague of every other lead on it — and
+-- with the whole-domain stop below, one gmail purchase would halt every gmail sequence.
+-- No such lead exists today; a later import is one search away from creating one.
+drop view if exists won_enrollments;
+drop view if exists conversions;
+drop view if exists lead_companies;
+create view lead_companies as
+select l.id, l.email, l.company_name, l.status,
+       case when l.domain in ('gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.se',
+                              'outlook.com', 'live.se', 'live.com', 'icloud.com', 'me.com',
+                              'yahoo.com', 'yahoo.se', 'telia.com', 'bredband.net',
+                              'comhem.se', 'spray.se', 'msn.com', 'protonmail.com')
+            then '' else l.domain end as domain,
+       -- Legal forms go first, so "St1 Sverige AB" and "St1 Sverige" agree, then anything
+       -- that is not a letter or digit, so punctuation and spacing stop mattering.
+       regexp_replace(regexp_replace(lower(coalesce(l.company_name, '')),
+         '\m(ab|aktiebolag|publ|hb|kb|oy|as)\M', '', 'g'),
+         '[^a-z0-9]', '', 'g') as company
+  from leads l;
+
 -- Attribution. One row per purchase that can be credited to a lead we emailed, so every
 -- count downstream is a plain count and revenue cannot be double-counted: a purchase at a
 -- company where two people were mailed still resolves to a single row.
 --
 -- Dropped and recreated rather than `create or replace`, which refuses a changed column
 -- list and would break `npm run db:push` on the next edit here.
-drop view if exists conversions;
 create view conversions as
 with win as (
   select coalesce((select nullif(value, '')::int from settings
@@ -309,19 +337,6 @@ touched as (
     from messages m join enrollments e on e.id = m.enrollment_id
    where m.sent_at is not null
    group by m.lead_id
-),
-lead_keys as (
-  -- The lead's company reduced to something comparable. Legal forms go first, so
-  -- "St1 Sverige AB" and "St1 Sverige" agree, then everything that is not a letter or
-  -- digit, so punctuation and spacing stop mattering.
-  select l.id, l.email, l.company_name,
-         lower(regexp_replace(
-           coalesce(nullif(l.company_domain, ''), split_part(l.email, '@', 2)),
-           '^www\.', '')) as domain,
-         regexp_replace(regexp_replace(lower(coalesce(l.company_name, '')),
-           '\m(ab|aktiebolag|publ|hb|kb|oy|as)\M', '', 'g'),
-           '[^a-z0-9]', '', 'g') as company
-    from leads l
 ),
 purchase_keys as (
   select p.*, regexp_replace(regexp_replace(lower(coalesce(p.org_name, '')),
@@ -347,12 +362,13 @@ select distinct on (p.id)
        p.quantity,
        p.total_excl_vat,
        p.currency,
-       case when k.email = any(p.emails)                          then 'email'
-            when k.domain <> '' and k.domain = any(p.domains)      then 'domain'
+       k.domain as lead_domain,
+       case when k.email = any(p.emails)                     then 'email'
+            when k.domain <> '' and k.domain = any(p.domains) then 'domain'
             else 'company' end as matched_on
   from purchase_keys p
   join touched t on true
-  join lead_keys k on k.id = t.lead_id
+  join lead_companies k on k.id = t.lead_id
  cross join win w
  where p.purchased_at >= t.first_sent_at
    and p.purchased_at < t.first_sent_at + (w.days || ' days')::interval
@@ -371,3 +387,22 @@ select distinct on (p.id)
                when k.domain <> '' and k.domain = any(p.domains) then 1
                else 2 end,
           t.first_sent_at;
+
+-- Which sequences a purchase should stop. Once a company has bought, every campaign
+-- aimed at anyone there is pitching something they may already own — several campaigns
+-- here sell the same course under different angles, so stopping only the campaign that
+-- got the credit left the buyer being chased by its siblings.
+--
+-- Whole company, every campaign. That is the deliberate cost: at a large employer one
+-- purchase quietens every lead on the domain, which is the right trade when the
+-- alternative is asking a paying customer whether they are interested.
+create view won_enrollments as
+select e.id, e.lead_id, e.campaign_id
+  from enrollments e
+  join lead_companies k on k.id = e.lead_id
+ where e.status = 'active'
+   and (
+        exists (select 1 from conversions cv where cv.lead_id = e.lead_id)
+     or (k.domain <> '' and exists (select 1 from conversions cv
+                                     where cv.lead_domain = k.domain))
+   );

@@ -117,27 +117,17 @@ const domainsOf = (emails: string[]) => [
 ]
 
 /**
- * Stops the sequence for anyone who bought.
+ * Stops every sequence aimed at a company that has bought.
  *
- * Same scope as a reply: the campaign that sold them stops, the others carry on. A
- * customer is a fair person to tell about a different course, and a campaign here has no
- * course id — only an offer written in prose — so there is no way to prove that the
- * campaign still running is pitching the very thing they just bought.
- *
- * Colleagues are deliberately left alone for the same reason. A purchase is credited to
- * one lead; other people at that company stay enrolled, because "someone at their firm
- * bought something" is not evidence that this campaign's course is the one they bought.
- *
- * Idempotent, and one-way: it only touches `active` rows, so a reply or a bounce already
- * recorded is never overwritten, and shortening the attribution window later does not
- * un-win a sequence that has already been stopped.
+ * Which rows those are is the `won_enrollments` view — the rule belongs next to the
+ * attribution it reads. Idempotent and one-way: only `active` rows are touched, so a
+ * reply or a bounce recorded first is never overwritten, and shortening the attribution
+ * window later does not un-win a sequence already stopped.
  */
 export async function stopWonSequences(): Promise<{ stopped: number }> {
   const stopped = (await db()`
     update enrollments e set status = 'won'
-     where e.status = 'active'
-       and exists (select 1 from conversions cv
-                    where cv.lead_id = e.lead_id and cv.campaign_id = e.campaign_id)
+     where e.id in (select id from won_enrollments)
     returning e.id, e.lead_id`) as { id: number; lead_id: number }[]
 
   if (!stopped.length) return { stopped: 0 }
@@ -150,9 +140,12 @@ export async function stopWonSequences(): Promise<{ stopped: number }> {
      where enrollment_id = any(${stopped.map((row) => row.id)}::int[])
        and status in ('draft', 'approved')`
 
+  // Only the lead the purchase is credited to is won. A colleague whose sequence stopped
+  // did not buy anything — their company did — and calling them won would overstate the
+  // pipeline and read as twenty customers where there are three.
   await db()`
     update leads set status = 'won'
-     where id = any(${stopped.map((row) => row.lead_id)}::int[]) and status <> 'won'`
+     where id in (select lead_id from conversions) and status <> 'won'`
 
   return { stopped: stopped.length }
 }

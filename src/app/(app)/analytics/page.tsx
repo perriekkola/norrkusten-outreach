@@ -138,10 +138,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
   const purchases = (await db()`
     select cv.purchase_id, cv.purchased_at, cv.course_title, cv.course_code, cv.org_name,
            cv.quantity, cv.total_excl_vat, cv.currency, cv.matched_on, cv.lead_id,
-           l.email as lead_email,
-           lower(regexp_replace(
-             coalesce(nullif(l.company_domain, ''), split_part(l.email, '@', 2)),
-             '^www\.', '')) as domain,
+           l.email as lead_email, l.domain,
            c.id as campaign_id, c.name as campaign_name,
            extract(day from cv.purchased_at - cv.first_sent_at)::int as days_after
       from conversions cv

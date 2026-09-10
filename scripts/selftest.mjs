@@ -964,29 +964,30 @@ assert.equal(Number(best.lead_id), 905, 'and credits the address that appears on
 /* ------------------------------------------------- buying stops the sequence */
 
 // Following up "are you interested?" to someone who already paid is the one outcome
-// worth failing a build over. Mirrors stopWonSequences() in lms.ts.
-await q(`insert into campaigns (id, name) values (910, 'Other campaign')`)
-await q(`insert into enrollments (id, campaign_id, lead_id) values (910, 910, 902)`)
-await q(`insert into messages (enrollment_id, lead_id, step, subject, body, status)
-         values (902, 902, 1, 'follow up', 'b', 'approved'),
-                (910, 902, 0, 'other', 'b', 'draft')`)
+// worth failing a build over. Several campaigns here sell the same course under different
+// angles, so the rule is the whole company, every campaign — `won_enrollments`.
+await q(`insert into campaigns (id, name) values (910, 'Same course, other angle')`)
+// A colleague at the buying company, and a stranger somewhere else.
+await q(`insert into leads (id, email, company_name, company_domain) values
+  (906, 'kollega2@nordvik.se', 'Nordvik Bygg AB', 'nordvik.se'),
+  (907, 'someone@annanfirma.se', 'Annan Firma AB', 'annanfirma.se')`)
+await q(`insert into enrollments (id, campaign_id, lead_id) values
+  (910, 910, 902), (906, 900, 906), (907, 900, 907)`)
+await q(`insert into messages (enrollment_id, lead_id, step, subject, body, status) values
+  (902, 902, 1, 'follow up', 'b', 'approved'),
+  (910, 902, 0, 'other angle', 'b', 'draft'),
+  (906, 906, 0, 'colleague', 'b', 'approved')`)
+
+const target = (await q(`select id, lead_id from won_enrollments order by id`)).map((r) => Number(r.id))
+assert.ok(target.includes(902), 'the campaign that sold them stops')
+assert.ok(target.includes(910), 'and so does another campaign to the same person')
+assert.ok(target.includes(906), 'and a colleague on the same domain, who may already have a seat')
+assert.ok(!target.includes(907), 'a company that has not bought is left alone')
 
 const won = await q(
-  `update enrollments e set status = 'won'
-    where e.status = 'active'
-      and exists (select 1 from conversions cv
-                   where cv.lead_id = e.lead_id and cv.campaign_id = e.campaign_id)
+  `update enrollments e set status = 'won' where e.id in (select id from won_enrollments)
    returning e.id, e.lead_id`,
 )
-assert.ok(
-  won.some((r) => Number(r.id) === 902),
-  'the campaign that sold them stops',
-)
-assert.ok(
-  !won.some((r) => Number(r.id) === 910),
-  'a different campaign to the same person keeps running — a customer may want another course',
-)
-
 await q(
   `update messages set status = 'skipped'
     where enrollment_id = any($1::int[]) and status in ('draft', 'approved')`,
@@ -998,33 +999,76 @@ assert.equal(
   'an already-approved email is dropped, not left in the outbox to go out next round',
 )
 assert.equal(
-  (await q(`select status from messages where enrollment_id = 910`))[0].status,
-  'draft',
-  'and the other campaign keeps its draft',
+  (await q(`select status from messages where enrollment_id = 906`))[0].status,
+  'skipped',
+  "and so is the colleague's",
+)
+assert.equal(
+  (await q(`select status from messages where enrollment_id = 907`)).length,
+  0,
+  'nothing was queued for the untouched company to begin with',
 )
 
 // Drafting and sending both gate on 'active', so 'won' is what actually stops the work.
 assert.equal(
   (await q(`select count(*)::int as n from enrollments
-             where lead_id = 902 and campaign_id = 900 and status = 'active'`))[0].n,
+             where lead_id in (902, 906) and status = 'active'`))[0].n,
   0,
-  'nothing is left active for the campaign they bought from',
+  'nothing is left active at a company that bought',
+)
+assert.equal(
+  (await q(`select status from enrollments where id = 907`))[0].status,
+  'active',
+  'and the unrelated company keeps running',
+)
+
+// A shared mail provider is not a company. Without the guard in lead_companies, one
+// purchase from a gmail address would stop every gmail lead in the database.
+await q(`insert into leads (id, email, company_name, company_domain) values
+  (908, 'kopare@gmail.com', 'Enmansfirma', ''),
+  (909, 'obekant@gmail.com', 'Annan Enmansfirma', '')`)
+await q(`insert into campaigns (id, name) values (920, 'Freemail test')`)
+await q(`insert into enrollments (id, campaign_id, lead_id) values (908, 920, 908), (909, 920, 909)`)
+await q(`insert into messages (enrollment_id, lead_id, step, subject, body, status, sent_at) values
+  (908, 908, 0, 's', 'b', 'sent', now() - interval '20 days'),
+  (909, 909, 0, 's', 'b', 'sent', now() - interval '20 days')`)
+await q(`insert into purchases (id, purchased_at, org_name, emails, domains, total_excl_vat, source)
+         values ('p-gmail', now() - interval '10 days', 'Enmansfirma',
+                 '{"kopare@gmail.com"}', '{"gmail.com"}', 1500, 'web')`)
+const freemail = (await q(`select id from won_enrollments`)).map((r) => Number(r.id))
+assert.ok(freemail.includes(908), 'the address on the purchase still stops — that is an exact match')
+assert.ok(
+  !freemail.includes(909),
+  'but a stranger sharing the mail provider does not: gmail.com is not a company',
+)
+assert.equal(
+  (await q(`select matched_on from conversions where purchase_id = 'p-gmail'`))[0].matched_on,
+  'email',
+  'and the match is credited to the address, never to the provider domain',
+)
+
+// Stopping a colleague's sequence is not the same as them buying. Marking all twenty
+// leads at a company won would read as twenty customers where there are three.
+await q(`update leads set status = 'won'
+          where id in (select lead_id from conversions) and status <> 'won'`)
+assert.equal(
+  (await q(`select status from leads where id = 902`))[0].status,
+  'won',
+  'the lead the purchase is credited to is won',
+)
+assert.notEqual(
+  (await q(`select status from leads where id = 906`))[0].status,
+  'won',
+  'a colleague whose sequence stopped is not — their company bought, they did not',
 )
 
 // Re-running must not undo a reply or a bounce that was recorded first.
 await q(`update enrollments set status = 'replied' where id = 910`)
-const second = await q(
-  `update enrollments e set status = 'won'
-    where e.status = 'active'
-      and exists (select 1 from conversions cv
-                   where cv.lead_id = e.lead_id and cv.campaign_id = e.campaign_id)
-   returning e.id`,
-)
-assert.equal(second.length, 0, 'a second pass touches nothing — the update is idempotent')
+await q(`update enrollments e set status = 'won' where e.id in (select id from won_enrollments)`)
 assert.equal(
   (await q(`select status from enrollments where id = 910`))[0].status,
   'replied',
-  'and a status that is not active is never overwritten',
+  'a status that is not active is never overwritten, however often the sync runs',
 )
 
 // Enrolling again must not revive them: the insert relies on the unique pair.
