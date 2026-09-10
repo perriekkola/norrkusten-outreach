@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { refresh } from 'next/cache'
 import { describeApiError } from './ai'
 import { startRun, abortRun, type LeadSearchInput } from './apify'
-import { ACTOR_MAX_LEADS, DEFAULT_LEADS } from './apify-options'
+import { ACTOR_MAX_LEADS, citySpellings, DEFAULT_LEADS } from './apify-options'
 import {
   checkPassword,
   endSession,
@@ -281,7 +281,7 @@ export async function createSearch(_prev: State, formData: FormData): Promise<St
     seniority_level: formData.getAll('seniority_level').map(String),
     functional_level: formData.getAll('functional_level').map(String),
     contact_location: formData.getAll('contact_location').map(String),
-    contact_city: list(formData.get('contact_city')),
+    contact_city: list(formData.get('contact_city')).flatMap(citySpellings),
     email_status: formData.getAll('email_status').map(String),
     size: formData.getAll('size').map(String),
     company_industry: formData.getAll('company_industry').map(String),

@@ -317,6 +317,32 @@ assert.ok(!sealed.includes(password), 'ciphertext does not contain the plaintext
 assert.notEqual(encrypt(password), encrypt(password), 'a fresh IV each time, so no repeats')
 assert.throws(() => decrypt(sealed.slice(0, -4) + 'AAAA'), 'a tampered ciphertext is rejected')
 
+/* ------------------------------------------------------- city spellings */
+
+// The actor's index holds no Swedish letters, so a city typed the Swedish way matched
+// nothing and said nothing about it. Each expected form here was read back out of a
+// lead the actor itself returned.
+const { citySpellings } = await import('../src/lib/apify-options.ts')
+for (const [typed, expected] of [
+  ['Luleå', 'lulea'],
+  ['Malmö', 'malmoe'],
+  ['Jönköping', 'joenkoeping'],
+  ['Västerås', 'vaesteras'],
+  ['Södertälje', 'soedertaelje'],
+  ['Västra Frölunda', 'vaestra froelunda'],
+  // A word that starts with the letter just loses its dots: Örebro, not Oerebro.
+  ['Örebro', 'orebro'],
+  ['Östersund', 'ostersund'],
+  ['Ånge', 'ange'],
+]) {
+  assert.deepEqual(
+    citySpellings(typed),
+    [typed.toLowerCase(), expected],
+    `${typed} is asked for both ways`,
+  )
+}
+assert.deepEqual(citySpellings('Boden'), ['boden'], 'a city with no Swedish letters is asked once')
+
 /* ------------------------------------------------------------------ schema */
 
 // A trailing `--` comment may contain a semicolon; the splitter must not cut there.

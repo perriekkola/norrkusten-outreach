@@ -14,6 +14,34 @@ export const ACTOR_MAX_LEADS = 100_000
 /** Was 100, which quietly cut most searches off. A search should miss nobody by default. */
 export const DEFAULT_LEADS = 1000
 
+/**
+ * Every spelling of a city worth asking the actor about.
+ *
+ * There is not a single Swedish letter anywhere in the actor's index: Luleå is stored
+ * "Lulea", Malmö "Malmoe", Jönköping "Joenkoeping". A city typed the way a Swede types
+ * it therefore matched nothing at all, and said nothing about it — a Norrbotten search
+ * came back with Kiruna, Boden and Kalix, and none of Luleå, Piteå, Gällivare, Umeå or
+ * Skellefteå, which is most of the county.
+ *
+ * Inside a word the letter becomes a digraph (ä→ae, ö→oe, å→a); starting one it just
+ * loses its dots, so Örebro is "Orebro" and not "Oerebro". Both what the user typed and
+ * the translated form go in: contact_city is an OR filter, and a spelling that matches
+ * nothing costs nothing — billing is per lead returned.
+ */
+const CITY_LETTERS: Record<string, string> = { å: 'a', ä: 'ae', ö: 'oe' }
+
+export function citySpellings(city: string): string[] {
+  const translated = [...city.toLowerCase()]
+    .map((letter, index, all) => {
+      const digraph = CITY_LETTERS[letter]
+      if (!digraph) return letter
+      const startsAWord = index === 0 || /\s/.test(all[index - 1])
+      return startsAWord ? digraph[0] : digraph
+    })
+    .join('')
+  return [...new Set([city.toLowerCase(), translated])]
+}
+
 export const SENIORITY: Option[] = [
   {
     "value": "founder",
