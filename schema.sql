@@ -250,3 +250,11 @@ begin
 end
 $$;
 drop index if exists idx_leads_search;
+
+-- `searches.imported` used to be tallied inside the import loop, so whichever of the
+-- cron, the Searches page and its poller got there second inserted nothing, counted 0,
+-- and overwrote the real figure. lead_searches is the ground truth now; this puts the
+-- displayed number back in step with it, and stays correct however often it runs.
+update searches s
+   set imported = (select count(*) from lead_searches ls where ls.search_id = s.id)
+ where imported <> (select count(*) from lead_searches ls where ls.search_id = s.id);

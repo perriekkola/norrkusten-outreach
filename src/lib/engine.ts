@@ -34,7 +34,6 @@ async function importDataset(searchId: number, rows: Record<string, unknown>[]) 
     .filter((email) => email.includes('@'))
   const blocked = await suppressedAmong(emails)
 
-  let imported = 0
   for (const row of rows) {
     const email = normalizeEmail(str(row, 'email') ?? '')
     if (!email.includes('@') || blocked.has(email)) continue
@@ -43,7 +42,7 @@ async function importDataset(searchId: number, rows: Record<string, unknown>[]) 
     // update` is a no-op write whose only job is to make `returning id` fire for an
     // address we already hold — `do nothing` returns nothing, and then the membership
     // row could not be written for exactly the leads that need it most.
-    const linked = (await db()`
+    await db()`
       with lead as (
         insert into leads (
           email, first_name, last_name, full_name, job_title, seniority, linkedin,
@@ -63,11 +62,19 @@ async function importDataset(searchId: number, rows: Record<string, unknown>[]) 
       )
       insert into lead_searches (search_id, lead_id)
       select ${searchId}, id from lead
-      on conflict do nothing
-      returning lead_id`) as { lead_id: number }[]
-    if (linked.length) imported++
+      on conflict do nothing`
   }
-  return imported
+
+  // Counted from the table, not tallied in the loop. Three things call ingestSearches —
+  // the cron, the Searches page on load, and its 15-second poller — so two passes over
+  // the same finished run overlap regularly. The second one inserts nothing, and when it
+  // tallied its own inserts it reported 0 and overwrote the real number: four searches
+  // that had found ~900 leads each sat there claiming they had imported none.
+  const [{ count }] = (await db()`
+    select count(*)::int as count from lead_searches where search_id = ${searchId}`) as {
+    count: number
+  }[]
+  return count
 }
 
 /** Poll every in-flight Apify run and pull finished datasets into `leads`. */
