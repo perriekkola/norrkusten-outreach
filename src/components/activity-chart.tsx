@@ -38,7 +38,7 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
   if (data.length === 0) return null
 
   return (
-    <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+    <ChartContainer config={chartConfig} className="aspect-auto h-full min-h-[250px] w-full">
       <AreaChart data={data} accessibilityLayer margin={{ left: 12, right: 12 }}>
         <defs>
           {Object.keys(chartConfig).map((key) => (

@@ -1,5 +1,11 @@
 import { ActivityChart, type ActivityPoint } from '@/components/activity-chart'
 import { PageHeader } from '@/components/page-header'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { db } from '@/lib/db'
 import { money } from '@/lib/format'
@@ -196,7 +202,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid items-stretch gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -204,7 +210,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
             </CardTitle>
             <CardDescription>Emails sent, opened and replied to, per day.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-h-[260px] flex-1">
             <ActivityChart data={activity} />
           </CardContent>
         </Card>
@@ -212,38 +218,58 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
         <Card>
           <CardHeader>
             <CardTitle className="text-base">How reliable is this?</CardTitle>
+            <CardDescription>What each number actually measures.</CardDescription>
           </CardHeader>
-          <CardContent className="text-muted-foreground space-y-3 text-sm">
-            <p>
-              <strong className="text-foreground">Opens</strong> use a tracking pixel. Apple Mail
-              Privacy Protection and Gmail image proxies pre-load images, so treat open rate as a
-              trend, not a headcount.
-            </p>
-            <p>
-              <strong className="text-foreground">Clicks</strong> are exact — links in sent mail
-              are rewritten through a signed redirect, so a click is a real human action rather
-              than a proxy prefetch. Better signal than opens.
-            </p>
-            <p>
-              <strong className="text-foreground">Replies</strong> are matched by reading the inbox on the
-              actual mail headers, so they are exact — and a reply stops that lead&apos;s sequence
-              automatically.
-            </p>
-            <p>
-              <strong className="text-foreground">Purchases</strong> come from the LMS and are
-              credited to a lead when the buyer&apos;s address matches theirs, or the company
-              does, and the purchase lands inside the attribution window after the first
-              email. Company matches are an inference: someone at the same firm bought, not
-              necessarily the person mailed. Credit goes to whichever campaign emailed them
-              last, and each purchase is counted once even when several colleagues were
-              contacted.
-            </p>
-            <p>
-              <strong className="text-foreground">Bounces</strong> arrive as an ordinary
-              undelivered-mail reply in your inbox rather than being counted here, so this
-              number only moves when one is recorded by hand. {funnel.bounced} lead(s) are
-              currently marked as bounced.
-            </p>
+          {/* Accordion, not a wall of prose: collapsed it stays close to the chart's height,
+              so the two cards in this row no longer disagree about how tall the row is. */}
+          <CardContent className="text-muted-foreground text-sm">
+            <Accordion type="single" collapsible defaultValue="opens">
+              <AccordionItem value="opens">
+                <AccordionTrigger className="text-foreground">Opens</AccordionTrigger>
+                <AccordionContent>
+                  Opens use a tracking pixel. Apple Mail Privacy Protection and Gmail image
+                  proxies pre-load images, so treat open rate as a trend, not a headcount.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="clicks">
+                <AccordionTrigger className="text-foreground">Clicks</AccordionTrigger>
+                <AccordionContent>
+                  Clicks are exact — links in sent mail are rewritten through a signed redirect,
+                  so a click is a real human action rather than a proxy prefetch. Better signal
+                  than opens.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="replies">
+                <AccordionTrigger className="text-foreground">Replies</AccordionTrigger>
+                <AccordionContent>
+                  Replies are matched by reading the inbox on the actual mail headers, so they
+                  are exact — and a reply stops that lead&apos;s sequence automatically.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="purchases">
+                <AccordionTrigger className="text-foreground">Purchases</AccordionTrigger>
+                <AccordionContent>
+                  Purchases come from the LMS and are credited to a lead when the buyer&apos;s
+                  address matches theirs, or the company does, and the purchase lands inside the
+                  attribution window after the first email. Company matches are an inference:
+                  someone at the same firm bought, not necessarily the person mailed. Credit goes
+                  to whichever campaign emailed them last, and each purchase is counted once even
+                  when several colleagues were contacted.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="bounces">
+                <AccordionTrigger className="text-foreground">Bounces</AccordionTrigger>
+                <AccordionContent>
+                  Bounces arrive as an ordinary undelivered-mail reply in your inbox rather than
+                  being counted here, so this number only moves when one is recorded by hand.{' '}
+                  {funnel.bounced} lead(s) are currently marked as bounced.
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </CardContent>
         </Card>
       </div>
