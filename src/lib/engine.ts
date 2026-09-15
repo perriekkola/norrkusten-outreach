@@ -640,6 +640,17 @@ export const sendSpacingMs = async () =>
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export async function sendApproved(deadline = Date.now() + 180_000) {
+  // Leads inside the cooldown are filtered here, not just inside sendMessage, and the two
+  // places cost very different things. sendMessage still refuses them — it is the guard
+  // that counts — but by then this pass has already paid the spacing sleep for a message
+  // that never reaches the provider. Half of a 100-row slice was typically in cooldown, so
+  // half of a three-minute send window was spent sleeping between database lookups.
+  //
+  // It also decides who is even considered: the slice is the top 100 by score, and a
+  // cooling message occupies a slot a sendable one could have had. With eight mailboxes
+  // fully crowded out, the fleet was sending a fraction of what it was allowed to.
+  const cooldown = await leadCooldownDays()
+
   // Highest-scoring leads go out first, so a partial run still hits the best ones — and
   // a pass that runs out of allowance has spent it on the best leads, not the first ones.
   const approved = (await db()`
@@ -650,6 +661,10 @@ export async function sendApproved(deadline = Date.now() + 180_000) {
       join enrollments e on e.id = m.enrollment_id
       join campaigns c on c.id = e.campaign_id
      where m.status = 'approved'
+       and not exists (select 1 from messages prior
+                        where prior.lead_id = m.lead_id and prior.id <> m.id
+                          and prior.status = 'sent'
+                          and prior.sent_at > now() - make_interval(days => ${cooldown}::int))
      order by e.score desc nulls last, m.created_at limit 100`) as {
     id: number
     mailbox_id: number
