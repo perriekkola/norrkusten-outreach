@@ -39,12 +39,16 @@ export function SendingLimitsForm({
   cooldown,
   spacing,
   rounds,
+  mailboxes,
 }: {
   cap: number
   cooldown: number
   spacing: number
   rounds: number
+  /** How many sending identities exist. 0 means the env fallback, which is still one sender. */
+  mailboxes: number
 }) {
+  const senders = Math.max(1, mailboxes)
   const [state, action, pending] = useActionState(saveSendingLimits, {})
 
   return (
@@ -54,10 +58,10 @@ export function SendingLimitsForm({
           <Label htmlFor="daily_send_cap" className="flex items-center gap-1.5">
             Emails per mailbox per day
             <Hint>
-              Counted per mailbox over the last 24 hours, and each round takes half of it.
-              Most senders sit at 40. Above 50, inbox providers start treating everything from
-              your domain as spam, so this field will not go higher. Want more volume? Add
-              another mailbox instead.
+              Counted per mailbox over the last 24 hours, then split evenly across the rounds
+              you run each day. This is what decides your daily volume. Most senders sit at
+              40. Above 50, inbox providers start treating everything from your domain as spam,
+              so this field will not go higher. Want more volume? Add another mailbox instead.
             </Hint>
           </Label>
           <Input
@@ -69,7 +73,7 @@ export function SendingLimitsForm({
             defaultValue={cap}
           />
           <p className="text-muted-foreground text-xs">
-            {Math.ceil(cap / 2)} per cron run, twice a day.
+            {senders} mailbox{senders === 1 ? '' : 'es'} × {cap} = up to {senders * cap} a day.
           </p>
         </div>
         <div className="space-y-2">

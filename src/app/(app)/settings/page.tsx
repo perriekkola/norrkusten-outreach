@@ -118,7 +118,13 @@ export default async function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SendingLimitsForm cap={cap} cooldown={cooldown} spacing={spacing} rounds={rounds} />
+          <SendingLimitsForm
+            cap={cap}
+            cooldown={cooldown}
+            spacing={spacing}
+            rounds={rounds}
+            mailboxes={mailboxes.length}
+          />
         </CardContent>
       </Card>
 
