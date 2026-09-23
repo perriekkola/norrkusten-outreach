@@ -309,6 +309,14 @@ assert.equal(readTrackToken('42-deadbeefdeadbeef'), null, 'forged signature reje
 assert.equal(readTrackToken('43' + trackToken(42).slice(2)), null, 'id swap rejected')
 assert.equal(readTrackToken('nonsense'), null, 'garbage rejected')
 
+// base64url signatures contain '-' about one time in five. Those used to be cut short at
+// the second dash and rejected, which left a recipient with an opt-out link that did not work.
+const dashed = Array.from({ length: 200 }, (_, i) => i).find((i) => unsubToken(i).split('-').length > 2)
+assert.equal(readUnsubToken(unsubToken(dashed)), dashed, 'opt-out token with a dash in its signature round-trips')
+const { clickToken, readClickToken } = await import('../src/lib/tracking.ts')
+const dashedClick = Array.from({ length: 200 }, (_, i) => i).find((i) => clickToken(i, 'https://x.se').split('-').length > 2)
+assert.equal(readClickToken(clickToken(dashedClick, 'https://x.se'), 'https://x.se'), dashedClick, 'click token with a dash round-trips')
+
 // Mailbox passwords must survive a round trip and must not be readable at rest.
 const password = 'hunter2-åäö-🔐'
 const sealed = encrypt(password)

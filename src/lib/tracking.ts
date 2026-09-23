@@ -10,34 +10,32 @@ function sign(payload: string) {
 export const trackToken = (id: number) => `${id}-${sign(`track:${id}`)}`
 
 /**
+ * Splits `id-signature` at the first dash only. The signature is base64url, which has `-`
+ * in its alphabet, so about one token in five carries a dash of its own. Splitting on every
+ * dash cut those signatures short and rejected them: dead opt-out links, 400s on clicks.
+ */
+function verify(token: string, payload: (id: number) => string): number | null {
+  const match = /^(\d+)-(.+)$/.exec(token)
+  if (!match) return null
+  const id = Number(match[1])
+  return match[2] === sign(payload(id)) ? id : null
+}
+
+/**
  * Click tokens sign the destination as well as the message, so the endpoint cannot be
  * turned into an open redirect by swapping the `u` parameter.
  */
 export const clickToken = (id: number, url: string) => `${id}-${sign(`click:${id}:${url}`)}`
 
-export function readClickToken(token: string, url: string): number | null {
-  const [rawId, signature] = token.split('-')
-  const id = Number(rawId)
-  if (!Number.isFinite(id) || !signature) return null
-  return signature === sign(`click:${id}:${url}`) ? id : null
-}
+export const readClickToken = (token: string, url: string) =>
+  verify(token, (id) => `click:${id}:${url}`)
 
 /** Opt-out link. Signed per message, so the URL carries no address to harvest. */
 export const unsubToken = (id: number) => `${id}-${sign(`unsub:${id}`)}`
 
-export function readUnsubToken(token: string): number | null {
-  const [rawId, signature] = token.split('-')
-  const id = Number(rawId)
-  if (!Number.isFinite(id) || !signature) return null
-  return signature === sign(`unsub:${id}`) ? id : null
-}
+export const readUnsubToken = (token: string) => verify(token, (id) => `unsub:${id}`)
 
-export function readTrackToken(token: string): number | null {
-  const [rawId, signature] = token.split('-')
-  const id = Number(rawId)
-  if (!Number.isFinite(id) || !signature) return null
-  return signature === sign(`track:${id}`) ? id : null
-}
+export const readTrackToken = (token: string) => verify(token, (id) => `track:${id}`)
 
 export function appUrl() {
   const explicit = process.env.APP_URL
