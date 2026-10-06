@@ -123,7 +123,14 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
              interval '1 day') d
      order by d`) as ActivityPoint[]
 
+  // `conversions` is a view that matches every purchase against every lead emailed, about a
+  // second each time it runs. Grouped once and joined, not a subquery per campaign: per
+  // campaign it ran twice for each of them, and 29 campaigns took two minutes to render.
   const campaigns = (await db()`
+    with won as (
+      select campaign_id, count(*) as bought, sum(total_excl_vat) as revenue
+        from conversions group by campaign_id
+    )
     select c.id, c.name,
            (select count(*) from enrollments e where e.campaign_id = c.id)::int as enrolled,
            (select count(*) from messages m join enrollments e on e.id = m.enrollment_id
@@ -132,10 +139,10 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/analyt
              where e.campaign_id = c.id and m.opened_at is not null)::int       as opened,
            (select count(*) from messages m join enrollments e on e.id = m.enrollment_id
              where e.campaign_id = c.id and m.replied_at is not null)::int      as replied,
-           (select count(*) from conversions cv where cv.campaign_id = c.id)::int as bought,
-           (select coalesce(sum(cv.total_excl_vat), 0) from conversions cv
-             where cv.campaign_id = c.id)::float                                as revenue
+           coalesce(won.bought, 0)::int                                         as bought,
+           coalesce(won.revenue, 0)::float                                      as revenue
       from campaigns c
+      left join won on won.campaign_id = c.id
      where (${campaign}::int is null or c.id = ${campaign}::int)
      order by c.created_at desc`) as CampaignRow[]
 
