@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { db, type Campaign } from '@/lib/db'
+import { MailboxUsageCard, type MailboxUsage } from './mailbox-usage'
 
 type Row = Campaign & { enrolled: number; sent: number; replied: number }
 
@@ -18,6 +19,19 @@ export default async function CampaignsPage() {
            (select count(*) from enrollments e
              where e.campaign_id = c.id and e.status = 'replied')::int as replied
       from campaigns c order by c.created_at desc`) as Row[]
+  // A campaign with no mailbox sends from the same one resolveMailbox() would pick.
+  const mailboxes = (await db()`
+    with fallback as (select id from mailboxes order by is_default desc, id limit 1)
+    select m.id, m.name, m.from_email, m.is_default,
+           coalesce(json_agg(json_build_object('id', c.id, 'name', c.name, 'status', c.status)
+                             order by c.status = 'active' desc, c.name)
+                      filter (where c.id is not null), '[]') as campaigns
+      from mailboxes m
+      left join campaigns c
+        on c.mailbox_id = m.id
+        or (c.mailbox_id is null and m.id = (select id from fallback))
+     group by m.id
+     order by m.is_default desc, m.id`) as MailboxUsage[]
 
   return (
     <>
@@ -26,6 +40,8 @@ export default async function CampaignsPage() {
           <Button size="sm">New campaign</Button>
         </Link>
       </PageHeader>
+
+      <MailboxUsageCard mailboxes={mailboxes} />
 
       {campaigns.length === 0 ? (
         <Card>
