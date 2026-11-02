@@ -1,6 +1,7 @@
 import { PageHeader } from '@/components/page-header'
 import { SubmitButton } from '@/components/submit-button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -98,7 +99,14 @@ export default async function SearchesPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{search.imported}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="space-x-1 text-right whitespace-nowrap">
+                        {search.imported > 0 ? (
+                          <Button variant="ghost" size="sm" asChild>
+                            <a href={`/api/searches/${search.id}/export`} download>
+                              Excel
+                            </a>
+                          </Button>
+                        ) : null}
                         {search.status === 'running' ? (
                           <ConfirmButton
                             action={cancelSearch}
