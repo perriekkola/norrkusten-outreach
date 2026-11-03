@@ -2,7 +2,7 @@ import { requireUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { xlsx } from '@/lib/xlsx'
 
-// Everyone this search found, as an Excel sheet of company, name and title. Reads
+// Everyone this search found, as an Excel sheet of company, name, title and email. Reads
 // lead_searches, so a lead first imported by an earlier search is still on the list.
 export async function GET(_request: Request, context: RouteContext<'/api/searches/[id]/export'>) {
   await requireUser()
@@ -14,7 +14,7 @@ export async function GET(_request: Request, context: RouteContext<'/api/searche
   if (!searches[0]) return new Response('No such search.', { status: 404 })
 
   const leads = (await db()`
-    select l.company_name, l.full_name, l.first_name, l.last_name, l.job_title
+    select l.company_name, l.full_name, l.first_name, l.last_name, l.job_title, l.email
       from leads l join lead_searches ls on ls.lead_id = l.id
      where ls.search_id = ${Number(id)}
      order by lower(coalesce(l.company_name, '')), lower(coalesce(l.full_name, l.first_name, ''))`) as {
@@ -23,15 +23,17 @@ export async function GET(_request: Request, context: RouteContext<'/api/searche
     first_name: string | null
     last_name: string | null
     job_title: string | null
+    email: string
   }[]
 
   const { label } = searches[0]
   const file = xlsx(label, [
-    ['Företag', 'Namn', 'Titel'],
+    ['Företag', 'Namn', 'Titel', 'E-post'],
     ...leads.map((lead) => [
       lead.company_name ?? '',
       lead.full_name || [lead.first_name, lead.last_name].filter(Boolean).join(' '),
       lead.job_title ?? '',
+      lead.email,
     ]),
   ])
 
